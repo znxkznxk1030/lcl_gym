@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python run_simulation.py)"
+      "Bash(python run_simulation.py)",
+      "Bash(python run_simulation.py --verbose --policy greedy --steps 10)",
+      "Bash(python train_rl.py --episodes 1000)",
+      "Bash(python evaluate_rl.py)",
+      "Bash(python train_rl.py --episodes 2000 --lr 5e-4)",
+      "Bash(python evaluate_rl.py --episodes 30)",
+      "Bash(python rl/evaluate_rl.py --episodes 5)"
     ]
   }
 }

@@ -6,8 +6,8 @@ from __future__ import annotations
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
-from entities import Lane, Door, Truck
-from conflict_resolver import ConflictResolver
+from .entities import Lane, Door, Truck
+from .conflict_resolver import ConflictResolver
 
 
 DEFAULT_CONFIG = {

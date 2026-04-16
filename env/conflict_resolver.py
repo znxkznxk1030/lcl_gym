@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional
-from entities import Lane, Door, Truck
+from .entities import Lane, Door, Truck
 
 
 class ConflictResolver:
@@ -50,22 +50,19 @@ class ConflictResolver:
         Returns allocation: {door_id: lane_id}
         Only free doors and non-zero requests are considered.
         """
-        # Group requests by door_id, excluding "no request" (0)
-        door_requests: Dict[int, List[int]] = {}  # door_id -> [lane_ids]
+        door_requests: Dict[int, List[int]] = {}
         for lane_id, door_id in requests.items():
             if door_id == 0:
                 continue
-            real_door_idx = door_id - 1  # action i refers to door index i-1
+            real_door_idx = door_id - 1
             if real_door_idx < 0 or real_door_idx >= len(doors):
                 continue
             if doors[real_door_idx].is_busy:
                 continue
             door_requests.setdefault(real_door_idx, []).append(lane_id)
 
-        allocation: Dict[int, int] = {}  # door_idx -> lane_id
+        allocation: Dict[int, int] = {}
         lane_map = {lane.lane_id: lane for lane in lanes}
-
-        # Pick the truck with the most remaining time (FIFO proxy) if available
         oldest_truck = waiting_trucks[0] if waiting_trucks else None
 
         for door_idx, competing_lanes in door_requests.items():
