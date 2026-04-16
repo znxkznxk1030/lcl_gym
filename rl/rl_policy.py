@@ -15,16 +15,21 @@ from rl.networks import NumpyMLP
 
 
 # 관측 벡터 정규화 상수 (crossdock_env DEFAULT_CONFIG 기준)
+# obs layout (size = 7 + num_doors):
+#   0: lane_queue, 1: congestion, 2: outbound_fill_rate,
+#   3: outbound_departure_in, 4: buffer_remaining,
+#   5: idle_doors, 6: waiting_trucks, 7..: door_matches
 _OBS_SCALE = np.array([
-    50.0,   # 0: lane_queue        / 50
-    1.0,    # 1: congestion        (이미 0~1)
-    20.0,   # 2: dispatch_timer    / dispatch_interval
-    100.0,  # 3: buffer_remaining  / buffer_capacity
-    3.0,    # 4: idle_doors        / num_doors
-    10.0,   # 5: waiting_trucks    / soft max
-    1.0,    # 6: door_match_0      (이미 0~1)
-    1.0,    # 7: door_match_1
-    1.0,    # 8: door_match_2
+    50.0,   # 0: lane_queue              / 50
+    1.0,    # 1: congestion              (이미 0~1)
+    1.0,    # 2: outbound_fill_rate      (이미 0~1)
+    20.0,   # 3: outbound_departure_in   / dispatch_interval
+    150.0,  # 4: buffer_remaining        / buffer_capacity
+    3.0,    # 5: idle_doors              / num_doors
+    10.0,   # 6: waiting_trucks          / soft max
+    1.0,    # 7: door_match_0            (이미 0~1)
+    1.0,    # 8: door_match_1
+    1.0,    # 9: door_match_2
 ], dtype=np.float32)
 
 

@@ -31,8 +31,10 @@ def _door_str(env: CrossDockEnv) -> str:
 def _lane_str(env: CrossDockEnv) -> str:
     parts = []
     for lane in env.lanes:
+        ob = env.outbound_trucks[lane.lane_id]
         parts.append(
-            f"L{lane.lane_id}(q={lane.queue_volume:.0f} timer={lane.dispatch_timer})"
+            f"L{lane.lane_id}(q={lane.queue_volume:.0f} "
+            f"ob={ob.fill_rate:.0%} dep={ob.departure_timer})"
         )
     return "  ".join(parts)
 

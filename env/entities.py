@@ -1,9 +1,10 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
 class Truck:
+    """인바운드 트럭 — 2~3개 목적지 화물 혼재"""
     arrival_time: int
     shipments: dict  # {lane_id: volume}
 
@@ -13,13 +14,45 @@ class Truck:
     def volume_for_lane(self, lane_id: int) -> int:
         return self.shipments.get(lane_id, 0)
 
+    @property
+    def num_destinations(self) -> int:
+        return len(self.shipments)
+
+
+@dataclass
+class OutboundTruck:
+    """아웃바운드 트럭 — 목적지 1개 전용"""
+    lane_id: int
+    capacity: float
+    departure_timer: int
+    loaded: float = 0.0
+
+    @property
+    def fill_rate(self) -> float:
+        return self.loaded / (self.capacity + 1e-8)
+
+    @property
+    def space_remaining(self) -> float:
+        return max(self.capacity - self.loaded, 0.0)
+
+    def load(self, volume: float) -> float:
+        """화물 탑재. 실제 탑재된 양 반환."""
+        actual = min(volume, self.space_remaining)
+        self.loaded += actual
+        return actual
+
+    def tick(self) -> bool:
+        """타이머 감소. 출발 여부 반환 (True = 출발)."""
+        self.departure_timer -= 1
+        return self.departure_timer <= 0
+
 
 @dataclass
 class Door:
     door_id: int
     is_busy: bool = False
     remaining_time: int = 0
-    assigned_truck: Truck = None
+    assigned_truck: Optional[Truck] = None
     assigned_lane: int = -1
 
     def tick(self):
@@ -31,7 +64,7 @@ class Door:
                 truck = self.assigned_truck
                 self.assigned_truck = None
                 self.assigned_lane = -1
-                return truck  # return finished truck
+                return truck
         return None
 
     def assign(self, truck: Truck, lane_id: int, processing_time: int):
@@ -44,29 +77,18 @@ class Door:
 @dataclass
 class Lane:
     lane_id: int
-    dispatch_interval: int   # fixed interval between dispatches
-    queue_volume: float = 0.0
-    dispatch_timer: int = 0
-    total_dispatched: float = 0.0
-    late_dispatches: int = 0
-    on_time_dispatches: int = 0
-    dwell_times: List[float] = field(default_factory=list)
+    queue_volume: float = 0.0    # 인바운드에서 분류된 화물 대기량
 
     @property
     def congestion(self) -> float:
-        """Normalized congestion [0, 1] relative to a soft cap of 50 units."""
+        """정규화된 혼잡도 [0, 1]. soft cap = 50."""
         return min(self.queue_volume / 50.0, 1.0)
 
     def add_volume(self, volume: float):
         self.queue_volume += volume
 
-    def tick_dispatch(self) -> float:
-        """Decrement timer; dispatch when it hits 0. Return dispatched volume."""
-        self.dispatch_timer -= 1
-        dispatched = 0.0
-        if self.dispatch_timer <= 0:
-            dispatched = self.queue_volume
-            self.total_dispatched += dispatched
-            self.queue_volume = 0.0
-            self.dispatch_timer = self.dispatch_interval  # reset
-        return dispatched
+    def take_volume(self, max_volume: float) -> float:
+        """아웃바운드 트럭이 화물 가져갈 때. 실제 가져간 양 반환."""
+        taken = min(self.queue_volume, max_volume)
+        self.queue_volume -= taken
+        return taken
