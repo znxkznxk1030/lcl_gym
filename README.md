@@ -322,6 +322,63 @@ python rl/evaluate_rl.py --episodes 50
 python rl/evaluate_rl.py --weights checkpoints/weights_ep500
 ```
 
+### 최근 RL 학습 결과 (2026-04-16)
+
+이번 실행에서는 기존 `checkpoints/` 루트의 가중치를 덮어쓰지 않고 별도 디렉터리에 저장했습니다.
+
+```bash
+python - <<'PY'
+from rl.train_rl import train
+
+train(
+    num_episodes=2000,
+    lr=1e-3,
+    seed=42,
+    log_interval=100,
+    save_dir="checkpoints/run_20260416_214835",
+)
+PY
+```
+
+저장된 최종 가중치:
+
+```text
+checkpoints/run_20260416_214835/weights_final.npz
+```
+
+평가 명령:
+
+```bash
+python rl/evaluate_rl.py \
+  --weights checkpoints/run_20260416_214835/weights_final \
+  --episodes 50
+```
+
+학습 곡선 요약:
+
+| 구간 | reward | throughput | overflow | td_loss |
+|---|---:|---:|---:|---:|
+| 초반 (1~20%) | 2596.1 | 704.1 | 31.4 | 65.4324 |
+| 중반 (40~60%) | 2627.2 | 704.9 | 21.7 | 32.0111 |
+| 후반 (80~100%) | 2592.2 | 697.1 | 25.8 | 90.0885 |
+
+베이스라인 비교 평가 결과 (50 에피소드):
+
+| Policy | throughput | overflow | reward | door_util | dwell_t |
+|---|---:|---:|---:|---:|---:|
+| Random | 715.34±25.8 | 35.24±12.0 | 2643.35±93.0 | 0.73±0.1 | 7.09±1.5 |
+| FIFO | 526.98±74.7 | 1.18±1.8 | 1970.72±288.8 | 0.32±0.0 | 30.96±6.2 |
+| Greedy | 705.46±40.3 | 32.42±11.0 | 2608.57±155.3 | 0.68±0.1 | 8.52±1.8 |
+| Heuristic | 707.56±38.4 | 31.88±10.0 | 2618.90±144.6 | 0.67±0.1 | 8.21±2.0 |
+| RL | 693.10±39.7 | 26.98±8.4 | 2571.66±149.2 | 0.64±0.1 | 12.19±4.0 |
+
+요약:
+
+- RL은 Greedy 대비 throughput이 `-12.36` 낮았습니다.
+- RL은 Greedy/Heuristic보다 overflow는 낮았지만, dwell time은 더 길었습니다.
+- 이번 정책은 처리량 극대화보다는 요청을 보수적으로 하면서 overflow를 일부 줄이는 방향으로 수렴했습니다.
+- 기존 루트의 `checkpoints/weights_final.npz`는 이전 관측 차원으로 학습된 체크포인트라 현재 `obs_size=10` 환경과 맞지 않을 수 있습니다. 위의 `run_20260416_214835` 가중치를 사용하세요.
+
 ### 관측/행동 크기
 
 ```python

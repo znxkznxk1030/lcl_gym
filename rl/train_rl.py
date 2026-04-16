@@ -45,7 +45,7 @@ def shape_rewards(
         door_match = 0.0
         if action > 0:
             door_idx = action - 1
-            match_start = 6
+            match_start = 7
             if match_start + door_idx < len(obs):
                 door_match = float(obs[match_start + door_idx])
 
