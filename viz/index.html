@@ -180,7 +180,7 @@
       left: 16px;
       right: 16px;
       display: grid;
-      grid-template-columns: repeat(8, minmax(90px, 1fr));
+      grid-template-columns: repeat(9, minmax(90px, 1fr));
       gap: 8px;
       pointer-events: none;
       z-index: 2;
@@ -467,6 +467,7 @@
     <section class="hud" aria-label="주요 지표">
       <div class="metric"><b>Step</b><span id="mStep">0</span></div>
       <div class="metric"><b>Buffer</b><span id="mBuffer">0 / 0</span></div>
+      <div class="metric"><b>Scheduled</b><span id="mScheduled">0</span></div>
       <div class="metric"><b>Waiting</b><span id="mWaiting">0</span></div>
       <div class="metric"><b>Throughput</b><span id="mThroughput">0</span></div>
       <div class="metric"><b>Avg Fill</b><span id="mFill">0%</span></div>
@@ -517,6 +518,7 @@
     const laneX = [-8, -4, 0, 4, 8];
     const doorX = [-4.7, 0, 4.7];
     const Z = {
+      scheduled: -13.0,
       waiting: -9.3,
       doors: -5.1,
       buffer: -0.6,
@@ -623,12 +625,20 @@
 
     function buildStaticScene() {
       const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(27, 23),
+        new THREE.PlaneGeometry(27, 30),
         new THREE.MeshStandardMaterial({ color: 0xc9c1b0, roughness: 0.88, metalness: 0.03 })
       );
       floor.rotation.x = -Math.PI / 2;
+      floor.position.set(0, 0, -1.5);
       floor.receiveShadow = true;
       scene.add(floor);
+
+      // scheduled zone 구분선 (점선 느낌의 평면 스트라이프)
+      const schedZoneMat = new THREE.MeshBasicMaterial({ color: 0x8a9099, transparent: true, opacity: 0.18 });
+      const schedZone = new THREE.Mesh(new THREE.PlaneGeometry(25, 3.8), schedZoneMat);
+      schedZone.rotation.x = -Math.PI / 2;
+      schedZone.position.set(0, 0.005, Z.scheduled);
+      scene.add(schedZone);
 
       const dock = new THREE.Mesh(
         new THREE.BoxGeometry(21.5, 0.55, 2.1),
@@ -655,6 +665,7 @@
         addLaneBase(i);
       }
 
+      addZoneLabel("SCHEDULED ARRIVALS", 0, Z.scheduled - 1.45, 0x6b7280);
       addZoneLabel("WAITING TRUCKS", 0, Z.waiting - 1.1, 0x353c42);
       addZoneLabel("INBOUND DOORS", 0, Z.doors - 1.45, 0x353c42);
       addZoneLabel("BUFFER", -10.4, Z.buffer, 0x353c42);
@@ -729,6 +740,7 @@
       if (!frame) return;
 
       drawBuffer(frame);
+      drawScheduledTrucks(frame);
       drawWaitingTrucks(frame);
       drawDoors(frame);
       drawLanes(frame);
@@ -774,6 +786,28 @@
           dynamic.add(cube);
         }
       });
+    }
+
+    function drawScheduledTrucks(frame) {
+      const trucks = frame.scheduled_trucks || [];
+      const visible = Math.min(trucks.length, 5);
+      for (let i = 0; i < visible; i++) {
+        const truck = trucks[i];
+        const x = -8 + i * 4.0;
+        const z = Z.scheduled;
+        const mainLane = dominantLane(truck.shipments);
+        // 고스트 트럭 — 반투명으로 "미도착" 표현
+        drawTruck(x, 0.34, z, laneColors[mainLane] ?? 0x9ca3af, 1.2, 1.85, 0.22);
+        addDynamicLabel(`t=${truck.arrival_time}`, x, 0.85, z, 0x374151, 0xf3f4f6, 0.52);
+        drawShipmentChips(truck.shipments, x - 0.45, z + 0.82, 0.08);
+      }
+      if (trucks.length > visible) {
+        addDynamicLabel(`+${trucks.length - visible}`, 10.8, 0.9, Z.scheduled - 0.3, 0x374151, 0xf3f4f6, 0.65);
+      }
+      // 남은 스케줄 수 표시 배지
+      if (trucks.length === 0) {
+        addDynamicLabel("all arrived", 0, 0.82, Z.scheduled, 0x374151, 0xf3f4f6, 0.5);
+      }
     }
 
     function drawWaitingTrucks(frame) {
@@ -963,6 +997,7 @@
 
       $("mStep").textContent = `${frame.t}`;
       $("mBuffer").textContent = `${round(frame.buffer)} / ${round(frame.buffer_capacity)}`;
+      $("mScheduled").textContent = `${(frame.scheduled_trucks || []).length}`;
       $("mWaiting").textContent = `${(frame.waiting_trucks || []).length}`;
       $("mThroughput").textContent = `${round(metrics.total_throughput || 0)}`;
       $("mFill").textContent = `${Math.round(fill * 100)}%`;

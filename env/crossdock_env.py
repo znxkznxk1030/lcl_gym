@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     "num_inbound_doors": 3,
     "buffer_capacity": 60.0,      # CBM — 트럭 4~5대분 스테이징 공간
     "episode_length": 100,
-    "truck_arrival_prob": 0.4,
+    "truck_arrival_prob": 0.4,    # use_scheduled_arrivals=False 일 때만 사용
     "max_door_processing": 10,
     "inbound_min_dest": 2,        # 인바운드 트럭 최소 목적지 수
     "inbound_max_dest": 3,        # 인바운드 트럭 최대 목적지 수 (inclusive)
@@ -31,6 +31,12 @@ DEFAULT_CONFIG = {
     "inbound_vol_max": 5.0,       # CBM — 목적지당 최대 화물량
     "outbound_capacity": 15.0,    # CBM — 아웃바운드 트럭 1대 최대 적재량 (소형 트럭)
     "dispatch_interval": 20,      # 아웃바운드 출발 주기 (스텝)
+    # 스케줄 기반 입고
+    "use_scheduled_arrivals": True,
+    "arrival_count_min": 8,       # 에피소드당 최소 인바운드 트럭 수
+    "arrival_count_max": 15,      # 에피소드당 최대 인바운드 트럭 수
+    "arrival_pattern": "uniform", # "uniform" | "clustered"
+    "arrival_cluster_count": 2,   # clustered 패턴에서 클러스터(배송 배치) 수
     # reward weights
     "reward_alpha": 0.7,          # 팀 보상 비중
     "reward_beta": 0.3,           # 개인 보상 비중
@@ -63,6 +69,11 @@ class CrossDockEnv:
         self.dispatch_interval: int     = cfg["dispatch_interval"]
         self.reward_alpha: float        = cfg["reward_alpha"]
         self.reward_beta: float         = cfg["reward_beta"]
+        self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
+        self.arrival_count_min: int     = cfg["arrival_count_min"]
+        self.arrival_count_max: int     = cfg["arrival_count_max"]
+        self.arrival_pattern: str       = cfg["arrival_pattern"]
+        self.arrival_cluster_count: int = cfg["arrival_cluster_count"]
 
         self.resolver = ConflictResolver(
             alpha=cfg["cr_alpha"],
@@ -74,15 +85,16 @@ class CrossDockEnv:
         self.rng = np.random.default_rng(seed)
 
         # obs: [queue, congestion, fill_rate, departure_in,
-        #        buffer_remaining, idle_doors, waiting_trucks,
+        #        buffer_remaining, idle_doors, waiting_trucks, scheduled_trucks,
         #        door_match_0 .. door_match_{D-1}]
-        self.obs_size: int = 7 + self.num_inbound_doors
+        self.obs_size: int = 8 + self.num_inbound_doors
 
         self.lanes: List[Lane] = []
         self.doors: List[Door] = []
         self.outbound_trucks: List[OutboundTruck] = []
         self.buffer: float = 0.0
         self.waiting_trucks: List[Truck] = []
+        self.arrival_schedule: List[Truck] = []  # 스케줄 기반 입고 대기열
         self.t: int = 0
         self.metrics: Dict[str, Any] = {}
 
@@ -93,6 +105,7 @@ class CrossDockEnv:
         self.t = 0
         self.buffer = 0.0
         self.waiting_trucks = []
+        self.arrival_schedule = self._build_arrival_schedule() if self.use_scheduled_arrivals else []
 
         self.lanes = [Lane(lane_id=k) for k in range(self.num_lanes)]
         self.doors = [Door(door_id=i) for i in range(self.num_inbound_doors)]
@@ -173,9 +186,10 @@ class CrossDockEnv:
     # ------------------------------------------------------------------
 
     def get_obs(self) -> List[np.ndarray]:
-        idle_doors      = sum(1 for d in self.doors if not d.is_busy)
+        idle_doors       = sum(1 for d in self.doors if not d.is_busy)
         buffer_remaining = max(self.buffer_capacity - self.buffer, 0.0)
-        waiting         = len(self.waiting_trucks)
+        waiting          = len(self.waiting_trucks)
+        scheduled        = len(self.arrival_schedule)
 
         obs_list = []
         for k, lane in enumerate(self.lanes):
@@ -196,13 +210,14 @@ class CrossDockEnv:
                 [
                     lane.queue_volume,                # 0: 레인 적재량
                     lane.congestion,                  # 1: 혼잡도 (0~1)
-                    ob_truck.fill_rate,               # 2: 아웃바운드 탑재율 (0~1)  ★NEW
-                    float(ob_truck.departure_timer),  # 3: 아웃바운드 출발까지 스텝  ★NEW
+                    ob_truck.fill_rate,               # 2: 아웃바운드 탑재율 (0~1)
+                    float(ob_truck.departure_timer),  # 3: 아웃바운드 출발까지 스텝
                     float(buffer_remaining),          # 4: 버퍼 여유량
                     float(idle_doors),                # 5: 유휴 도어 수
-                    float(waiting),                   # 6: 대기 인바운드 트럭 수
+                    float(waiting),                   # 6: 대기 인바운드 트럭 수 (도어 배정 전)
+                    float(scheduled),                 # 7: 스케줄 대기 트럭 수 (아직 미도착)
                 ]
-                + door_matches.tolist(),              # 7..7+D-1: 도어 매칭도
+                + door_matches.tolist(),              # 8..8+D-1: 도어 매칭도
                 dtype=np.float32,
             )
             obs_list.append(obs)
@@ -212,9 +227,44 @@ class CrossDockEnv:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _build_arrival_schedule(self) -> List[Truck]:
+        """에피소드 시작 시 전체 입고 스케줄을 미리 생성."""
+        n = int(self.rng.integers(self.arrival_count_min, self.arrival_count_max + 1))
+
+        if self.arrival_pattern == "clustered":
+            # 클러스터 중심 근처에 트럭 몰아서 배치 (실제 배송 배치 패턴)
+            centers = self.rng.uniform(0.1, 0.9, size=self.arrival_cluster_count) * self.episode_length
+            cluster_ids = self.rng.integers(0, self.arrival_cluster_count, size=n)
+            spread = self.episode_length * 0.08  # 클러스터 폭 (에피소드의 8%)
+            raw_times = centers[cluster_ids] + self.rng.normal(0, spread, size=n)
+            arrival_times = sorted(int(np.clip(t, 0, self.episode_length - 1)) for t in raw_times)
+        else:  # uniform
+            arrival_times = sorted(
+                int(t) for t in self.rng.integers(0, self.episode_length, size=n)
+            )
+
+        schedule = []
+        for t in arrival_times:
+            n_dest = int(self.rng.integers(self.inbound_min_dest, self.inbound_max_dest + 1))
+            dest_lanes = self.rng.choice(
+                self.num_lanes, size=min(n_dest, self.num_lanes), replace=False
+            )
+            volumes = self.rng.uniform(
+                self.inbound_vol_min, self.inbound_vol_max, size=len(dest_lanes)
+            ).round(1)
+            shipments = {int(k): float(v) for k, v in zip(dest_lanes, volumes)}
+            schedule.append(Truck(arrival_time=t, shipments=shipments))
+        return schedule
+
     def _generate_arrivals(self) -> List[Truck]:
-        """인바운드 트럭 생성 — 2~3개 목적지 혼재, 목적지당 0.5~5.0 CBM"""
-        trucks = []
+        """인바운드 트럭 도착 — 스케줄 모드 또는 확률 모드."""
+        if self.use_scheduled_arrivals:
+            trucks = []
+            while self.arrival_schedule and self.arrival_schedule[0].arrival_time <= self.t:
+                trucks.append(self.arrival_schedule.pop(0))
+            return trucks
+
+        # 기존 확률 기반 모드
         if self.rng.random() < self.truck_arrival_prob:
             n_dest = int(self.rng.integers(
                 self.inbound_min_dest, self.inbound_max_dest + 1
@@ -226,8 +276,8 @@ class CrossDockEnv:
                 self.inbound_vol_min, self.inbound_vol_max, size=len(dest_lanes)
             ).round(1)
             shipments = {int(k): float(v) for k, v in zip(dest_lanes, volumes)}
-            trucks.append(Truck(arrival_time=self.t, shipments=shipments))
-        return trucks
+            return [Truck(arrival_time=self.t, shipments=shipments)]
+        return []
 
     def _tick_doors(self) -> List[Truck]:
         released = []
