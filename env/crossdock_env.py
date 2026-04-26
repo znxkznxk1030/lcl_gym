@@ -21,15 +21,15 @@ from .conflict_resolver import ConflictResolver
 DEFAULT_CONFIG = {
     "num_lanes": 5,
     "num_inbound_doors": 3,
-    "buffer_capacity": 150,       # 인바운드 처리량 증가에 맞춰 상향
+    "buffer_capacity": 60.0,      # CBM — 트럭 4~5대분 스테이징 공간
     "episode_length": 100,
-    "truck_arrival_prob": 0.4,    # 도착 확률 상향 (목적지 분산 보정)
+    "truck_arrival_prob": 0.4,
     "max_door_processing": 10,
     "inbound_min_dest": 2,        # 인바운드 트럭 최소 목적지 수
     "inbound_max_dest": 3,        # 인바운드 트럭 최대 목적지 수 (inclusive)
-    "inbound_vol_min": 5,         # 목적지당 최소 화물량
-    "inbound_vol_max": 20,        # 목적지당 최대 화물량
-    "outbound_capacity": 50,      # 아웃바운드 트럭 1대 최대 적재량
+    "inbound_vol_min": 0.5,       # CBM — 목적지당 최소 화물량
+    "inbound_vol_max": 5.0,       # CBM — 목적지당 최대 화물량
+    "outbound_capacity": 15.0,    # CBM — 아웃바운드 트럭 1대 최대 적재량 (소형 트럭)
     "dispatch_interval": 20,      # 아웃바운드 출발 주기 (스텝)
     # reward weights
     "reward_alpha": 0.7,          # 팀 보상 비중
@@ -51,14 +51,14 @@ class CrossDockEnv:
 
         self.num_lanes: int             = cfg["num_lanes"]
         self.num_inbound_doors: int     = cfg["num_inbound_doors"]
-        self.buffer_capacity: int       = cfg["buffer_capacity"]
+        self.buffer_capacity: float     = cfg["buffer_capacity"]
         self.episode_length: int        = cfg["episode_length"]
         self.truck_arrival_prob: float  = cfg["truck_arrival_prob"]
         self.max_door_processing: int   = cfg["max_door_processing"]
         self.inbound_min_dest: int      = cfg["inbound_min_dest"]
         self.inbound_max_dest: int      = cfg["inbound_max_dest"]
-        self.inbound_vol_min: int       = cfg["inbound_vol_min"]
-        self.inbound_vol_max: int       = cfg["inbound_vol_max"]
+        self.inbound_vol_min: float     = cfg["inbound_vol_min"]
+        self.inbound_vol_max: float     = cfg["inbound_vol_max"]
         self.outbound_capacity: float   = cfg["outbound_capacity"]
         self.dispatch_interval: int     = cfg["dispatch_interval"]
         self.reward_alpha: float        = cfg["reward_alpha"]
@@ -213,7 +213,7 @@ class CrossDockEnv:
     # ------------------------------------------------------------------
 
     def _generate_arrivals(self) -> List[Truck]:
-        """인바운드 트럭 생성 — 2~3개 목적지 혼재, 목적지당 5~20 화물량"""
+        """인바운드 트럭 생성 — 2~3개 목적지 혼재, 목적지당 0.5~5.0 CBM"""
         trucks = []
         if self.rng.random() < self.truck_arrival_prob:
             n_dest = int(self.rng.integers(
@@ -222,10 +222,10 @@ class CrossDockEnv:
             dest_lanes = self.rng.choice(
                 self.num_lanes, size=min(n_dest, self.num_lanes), replace=False
             )
-            volumes = self.rng.integers(
-                self.inbound_vol_min, self.inbound_vol_max + 1, size=len(dest_lanes)
-            )
-            shipments = {int(k): int(v) for k, v in zip(dest_lanes, volumes)}
+            volumes = self.rng.uniform(
+                self.inbound_vol_min, self.inbound_vol_max, size=len(dest_lanes)
+            ).round(1)
+            shipments = {int(k): float(v) for k, v in zip(dest_lanes, volumes)}
             trucks.append(Truck(arrival_time=self.t, shipments=shipments))
         return trucks
 

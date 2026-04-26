@@ -5,7 +5,9 @@
       "Bash(python viz/export_simulation.py --policy heuristic --seed 7 --output viz/sim_heuristic.json)",
       "Bash(python viz/export_simulation.py --policy rl --seed 42 --output viz/sim_rl.json)",
       "Bash(python -c \"import numpy as np; d = np.load\\('checkpoints/weights_final.npz'\\); print\\(list\\(d.keys\\(\\)\\)\\); print\\('W1 shape:', d['W1'].shape\\)\")",
-      "Bash(open \"/Users/yskim/Desktop/05. 물류 ai/lcl_gym/viz/index.html\")"
+      "Bash(open \"/Users/yskim/Desktop/05. 물류 ai/lcl_gym/viz/index.html\")",
+      "Bash(xxd .gitignore)",
+      "Bash(node -e ' *)"
     ]
   }
 }

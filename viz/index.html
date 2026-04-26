@@ -1,894 +1,1255 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CrossDock 3D Simulation Viewer</title>
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-  background:#090d14;
-  color:#dce8ff;
-  font-family:'Segoe UI',system-ui,sans-serif;
-  overflow:hidden;
-  user-select:none;
-}
-#canvas-wrap { position:fixed; inset:0; }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cross-Dock Simulation Viewer</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+      }
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --ink: #1d2329;
+      --muted: #67717d;
+      --line: #d5d0c4;
+      --panel: #fffdf8;
+      --panel-2: #ebe6da;
+      --accent: #0f766e;
+      --warn: #c2410c;
+      --danger: #b91c1c;
+      --good: #15803d;
+      --shadow: 0 12px 28px rgba(33, 35, 38, 0.13);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
 
-/* ── Header ── */
-#header {
-  position:fixed; top:0; left:0; right:0;
-  padding:10px 18px;
-  background:rgba(9,13,20,.85);
-  backdrop-filter:blur(12px);
-  border-bottom:1px solid rgba(255,255,255,.08);
-  display:flex; align-items:center; justify-content:space-between;
-  z-index:100;
-}
-#header h1 { font-size:14px; font-weight:700; color:#7eb8f7; letter-spacing:.6px; }
-#header-meta { font-size:11px; color:#5577aa; }
+    * {
+      box-sizing: border-box;
+    }
 
-/* ── Panels ── */
-.panel {
-  position:fixed;
-  background:rgba(9,13,20,.88);
-  backdrop-filter:blur(12px);
-  border:1px solid rgba(255,255,255,.09);
-  border-radius:8px; padding:13px;
-  z-index:100;
-}
-.ptitle {
-  font-size:10px; font-weight:700; text-transform:uppercase;
-  letter-spacing:1.2px; color:#5599ee; margin-bottom:10px;
-}
-.row { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; }
-.lbl { font-size:11px; color:#6688aa; }
-.val { font-size:12px; font-weight:600; color:#dce8ff; font-variant-numeric:tabular-nums; }
-.bar-wrap { height:4px; background:rgba(255,255,255,.1); border-radius:2px; margin-bottom:8px; overflow:hidden; }
-.bar { height:100%; border-radius:2px; transition:width .35s ease; }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+    }
 
-#step-panel { top:52px; left:14px; width:210px; }
-#metrics-panel { top:52px; right:14px; width:210px; }
-#legend { bottom:88px; left:14px; }
+    body {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }
 
-.lane-row { display:flex; align-items:center; gap:7px; margin-bottom:4px; }
-.lane-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
-.lane-txt { font-size:11px; color:#7799bb; font-variant-numeric:tabular-nums; }
+    button,
+    input,
+    select {
+      font: inherit;
+    }
 
-.door-row { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
-.door-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-.door-txt { font-size:11px; color:#7799bb; }
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.94);
+      backdrop-filter: blur(12px);
+      z-index: 3;
+    }
 
-/* ── Timeline ── */
-#timeline {
-  position:fixed; bottom:0; left:0; right:0;
-  background:rgba(9,13,20,.92);
-  backdrop-filter:blur(12px);
-  border-top:1px solid rgba(255,255,255,.08);
-  padding:10px 18px; z-index:100;
-}
-#ctrl-row { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
-.btn {
-  background:rgba(126,184,247,.12); border:1px solid rgba(126,184,247,.28);
-  color:#7eb8f7; border-radius:4px; padding:3px 10px;
-  font-size:12px; cursor:pointer; transition:background .2s;
-}
-.btn:hover { background:rgba(126,184,247,.28); }
-.btn:active { background:rgba(126,184,247,.4); }
-#step-disp { font-size:12px; font-weight:700; color:#7eb8f7; font-variant-numeric:tabular-nums; min-width:90px; }
-#spd-lbl { font-size:11px; color:#4466aa; min-width:36px; text-align:right; }
-#slider-row { display:flex; align-items:center; gap:8px; }
-#slider {
-  flex:1; height:3px; -webkit-appearance:none;
-  background:rgba(255,255,255,.12); border-radius:2px; outline:none; cursor:pointer;
-}
-#slider::-webkit-slider-thumb {
-  -webkit-appearance:none; width:13px; height:13px;
-  border-radius:50%; background:#7eb8f7; cursor:pointer;
-  box-shadow:0 0 6px rgba(126,184,247,.6);
-}
-.s-lbl { font-size:10px; color:#4466aa; min-width:20px; font-variant-numeric:tabular-nums; }
+    .title-block {
+      min-width: 0;
+    }
 
-/* ── Load Overlay ── */
-#overlay {
-  position:fixed; inset:0;
-  background:rgba(9,13,20,.97);
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  z-index:200;
-}
-#overlay h2 { font-size:20px; color:#7eb8f7; margin-bottom:6px; }
-#overlay .sub { font-size:13px; color:#4466aa; margin-bottom:22px; text-align:center; line-height:1.6; }
-.obtn {
-  background:rgba(126,184,247,.15); border:1px solid rgba(126,184,247,.4);
-  color:#7eb8f7; border-radius:6px; padding:9px 22px;
-  font-size:14px; cursor:pointer; margin:5px; transition:background .2s;
-}
-.obtn:hover { background:rgba(126,184,247,.3); }
-#drop-hint { margin-top:14px; font-size:11px; color:#2a3a55; }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: 0;
+      font-weight: 760;
+    }
 
-/* ── 3D Zone Labels ── */
-#zone-labels { position:fixed; pointer-events:none; z-index:50; }
-.zlbl {
-  position:absolute; font-size:10px; font-weight:700;
-  text-transform:uppercase; letter-spacing:.8px;
-  padding:2px 7px; border-radius:3px;
-  background:rgba(9,13,20,.7); border:1px solid rgba(255,255,255,.1);
-}
-</style>
+    .subline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .subline span {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    select,
+    .file-label {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fffaf0;
+      color: var(--ink);
+      padding: 0 10px;
+      white-space: nowrap;
+    }
+
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .icon-btn {
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fffaf0;
+      color: var(--ink);
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .icon-btn:hover {
+      transform: translateY(-1px);
+      border-color: #a9a294;
+      background: #fffdf8;
+    }
+
+    .icon-btn:active {
+      transform: translateY(0);
+    }
+
+    .icon-btn svg {
+      width: 17px;
+      height: 17px;
+      fill: currentColor;
+    }
+
+    .viewport-shell {
+      position: relative;
+      min-height: 0;
+      background: #d7d2c4;
+    }
+
+    #scene {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+
+    .hud {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      display: grid;
+      grid-template-columns: repeat(8, minmax(90px, 1fr));
+      gap: 8px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .metric {
+      min-width: 0;
+      border: 1px solid rgba(213, 208, 196, 0.88);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.9);
+      box-shadow: 0 6px 16px rgba(33, 35, 38, 0.08);
+      padding: 9px 10px;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 11px;
+      line-height: 1.2;
+      color: var(--muted);
+      font-weight: 660;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric span {
+      display: block;
+      margin-top: 4px;
+      font-size: 17px;
+      line-height: 1;
+      font-weight: 780;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .side-panel {
+      position: absolute;
+      top: 120px;
+      right: 16px;
+      width: min(360px, calc(100vw - 32px));
+      max-height: calc(100% - 150px);
+      overflow: auto;
+      border: 1px solid rgba(213, 208, 196, 0.92);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.93);
+      box-shadow: var(--shadow);
+      z-index: 2;
+    }
+
+    .side-panel h2 {
+      margin: 0;
+      padding: 12px 14px 8px;
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    .lane-list {
+      display: grid;
+      gap: 1px;
+      padding: 0 8px 8px;
+    }
+
+    .lane-row {
+      display: grid;
+      grid-template-columns: 34px 1fr 64px;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 6px;
+      border-radius: 6px;
+    }
+
+    .lane-row:nth-child(odd) {
+      background: rgba(235, 230, 218, 0.56);
+    }
+
+    .swatch {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      border: 1px solid rgba(29, 35, 41, 0.18);
+    }
+
+    .lane-main {
+      min-width: 0;
+    }
+
+    .lane-name {
+      font-size: 12px;
+      font-weight: 740;
+      line-height: 1.2;
+    }
+
+    .lane-bars {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin-top: 5px;
+    }
+
+    .bar {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #ded8ca;
+    }
+
+    .bar > i {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+    }
+
+    .lane-num {
+      font-size: 12px;
+      line-height: 1.35;
+      color: var(--muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: auto minmax(160px, 1fr) auto auto;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 18px 14px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.96);
+      z-index: 3;
+    }
+
+    .play-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .range-wrap {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .ticks {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .time-readout {
+      min-width: 90px;
+      font-size: 13px;
+      font-weight: 760;
+      text-align: right;
+    }
+
+    .status {
+      position: absolute;
+      left: 50%;
+      bottom: 84px;
+      transform: translateX(-50%);
+      max-width: min(640px, calc(100vw - 32px));
+      border: 1px solid rgba(213, 208, 196, 0.95);
+      border-radius: 8px;
+      background: rgba(255, 253, 248, 0.96);
+      box-shadow: var(--shadow);
+      color: var(--ink);
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      z-index: 4;
+      display: none;
+    }
+
+    .drop-active .status {
+      display: block;
+    }
+
+    @media (max-width: 1080px) {
+      .hud {
+        grid-template-columns: repeat(4, minmax(92px, 1fr));
+      }
+
+      .side-panel {
+        top: auto;
+        bottom: 84px;
+        max-height: 38%;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
+
+      .topbar {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        padding: 12px;
+      }
+
+      .control-row {
+        justify-content: flex-start;
+        overflow-x: auto;
+        padding-bottom: 2px;
+      }
+
+      .hud {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .metric {
+        padding: 7px 8px;
+      }
+
+      .metric span {
+        font-size: 15px;
+      }
+
+      .side-panel {
+        display: none;
+      }
+
+      .timeline {
+        grid-template-columns: auto minmax(90px, 1fr) auto;
+        gap: 8px;
+        padding: 9px 12px 12px;
+      }
+
+      .timeline select {
+        display: none;
+      }
+
+      .time-readout {
+        min-width: 66px;
+      }
+    }
+  </style>
 </head>
 <body>
-
-<div id="canvas-wrap"></div>
-<div id="zone-labels"></div>
-
-<!-- ── Load Overlay ── -->
-<div id="overlay">
-  <h2>CrossDock 3D Viewer</h2>
-  <p class="sub">
-    먼저 <code style="color:#7eb8f7">python viz/export_simulation.py</code> 를 실행하여<br>
-    <strong>simulation_data.json</strong> 을 생성한 뒤 파일을 불러오세요.
-  </p>
-  <label class="obtn" for="file-input">📂 파일 열기</label>
-  <button class="obtn" id="demo-btn">🎬 데모 실행</button>
-  <input type="file" id="file-input" accept=".json" style="position:absolute;left:-9999px;opacity:0;width:0;height:0;">
-  <p id="drop-hint">이 창에 JSON 파일을 드래그 앤 드롭할 수도 있습니다</p>
-</div>
-
-<!-- ── Header ── -->
-<div id="header" style="display:none">
-  <h1>⬡ CrossDock Simulation 3D Viewer</h1>
-  <span id="header-meta"></span>
-</div>
-
-<div id="step-panel"  class="panel" style="display:none"><div class="ptitle">Step Info</div><div id="step-info"></div></div>
-<div id="metrics-panel" class="panel" style="display:none"><div class="ptitle">Metrics</div><div id="metrics-info"></div></div>
-<div id="legend" class="panel" style="display:none"><div class="ptitle">Lanes</div><div id="legend-info"></div></div>
-
-<!-- ── Timeline ── -->
-<div id="timeline" style="display:none">
-  <div id="ctrl-row">
-    <button class="btn" id="btn-prev" title="이전 스텝 (←)">◀</button>
-    <button class="btn" id="btn-play" title="재생/일시정지 (Space)">▶ Play</button>
-    <button class="btn" id="btn-next" title="다음 스텝 (→)">▶</button>
-    <span id="step-disp">Step 0 / 0</span>
-    <span style="flex:1"></span>
-    <span id="spd-lbl">2 fps</span>
-    <button class="btn" id="btn-slow">−</button>
-    <button class="btn" id="btn-fast">+</button>
-  </div>
-  <div id="slider-row">
-    <span class="s-lbl">0</span>
-    <input type="range" id="slider" min="0" max="100" value="0">
-    <span class="s-lbl" id="s-max">100</span>
-  </div>
-</div>
-
-<!-- Three.js -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
-<script>
-'use strict';
-
-// ════════════════════════════════════════════════════════════
-//  Constants
-// ════════════════════════════════════════════════════════════
-const LANE_HEX  = [0xe74c3c, 0xe67e22, 0xf1c40f, 0x2ecc71, 0x3498db];
-const LANE_CSS  = ['#e74c3c','#e67e22','#f1c40f','#2ecc71','#3498db'];
-const LANE_NAME = ['Lane A','Lane B','Lane C','Lane D','Lane E'];
-
-// World-space layout (X = left↔right, Y = up, Z = back↔front)
-const L = {
-  LANE_X:     [-8, -4, 0, 4, 8],  // 5 lane columns
-  DOOR_X:     [-4,  0, 4],        // 3 inbound door columns
-  Z_WAIT:     -12,   // waiting truck queue
-  Z_DOOR:     -5.5,  // inbound docks
-  Z_BUF:       0,    // shared buffer band
-  Z_QUEUE:     5,    // staging lane queue bars
-  Z_OB:        10,   // outbound trucks
-};
-
-const DISPATCH_INTERVAL = 20;  // env default
-const MAX_QUEUE_VIS     = 50;  // volume → full bar height
-const MAX_BAR_H         = 4.5;
-const MAX_BUF_W         = 17.6;
-
-// ════════════════════════════════════════════════════════════
-//  Three.js globals
-// ════════════════════════════════════════════════════════════
-let scene, camera, renderer, orbitCtrl;
-let fo = {};   // frame objects (updatable meshes)
-
-// ════════════════════════════════════════════════════════════
-//  Playback state
-// ════════════════════════════════════════════════════════════
-let simData   = null;
-let frame     = 0;
-let playing   = false;
-let fpsIdx    = 2;
-const FPS_LIST = [0.5, 1, 2, 4, 8];
-let lastTick  = 0;
-let lerpT     = 1;  // 0..1 — interpolation progress for current frame transition
-
-// ════════════════════════════════════════════════════════════
-//  Init Three.js
-// ════════════════════════════════════════════════════════════
-function initThree() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x090d14);
-  scene.fog = new THREE.FogExp2(0x090d14, 0.018);
-
-  camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 200);
-  camera.position.set(0, 22, 28);
-  camera.lookAt(0, 0, 0);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  document.getElementById('canvas-wrap').appendChild(renderer.domElement);
-
-  orbitCtrl = new THREE.OrbitControls(camera, renderer.domElement);
-  orbitCtrl.enableDamping = true;
-  orbitCtrl.dampingFactor = 0.07;
-  orbitCtrl.target.set(0, 1, 0);
-  orbitCtrl.minDistance = 6;
-  orbitCtrl.maxDistance = 70;
-  orbitCtrl.maxPolarAngle = Math.PI / 2 - 0.04;
-  orbitCtrl.update();
-
-  // Lights
-  scene.add(new THREE.AmbientLight(0x7788bb, 0.55));
-
-  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-  sun.position.set(8, 24, 14);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left:-22, right:22, top:20, bottom:-20, near:0.1, far:80 });
-  scene.add(sun);
-
-  const fillLight = new THREE.DirectionalLight(0x223355, 0.4);
-  fillLight.position.set(-10, 8, -12);
-  scene.add(fillLight);
-
-  buildStatic();
-  buildDynamic();
-
-  window.addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
-
-  (function loop() {
-    requestAnimationFrame(loop);
-    orbitCtrl.update();
-    tickPlayback();
-    renderer.render(scene, camera);
-  })();
-}
-
-// ════════════════════════════════════════════════════════════
-//  Static geometry
-// ════════════════════════════════════════════════════════════
-function box(w, h, d, color, opts = {}) {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, d),
-    new THREE.MeshLambertMaterial({ color, ...opts })
-  );
-  if (opts.shadow !== false) { m.castShadow = true; m.receiveShadow = true; }
-  return m;
-}
-
-function addBox(w, h, d, color, px, py, pz, opts = {}) {
-  const m = box(w, h, d, color, opts);
-  m.position.set(px, py, pz);
-  scene.add(m);
-  return m;
-}
-
-function floorZone(x1, x2, z1, z2, color, opacity) {
-  const m = new THREE.Mesh(
-    new THREE.PlaneGeometry(x2 - x1, z2 - z1),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-  );
-  m.rotation.x = -Math.PI / 2;
-  m.position.set((x1 + x2) / 2, 0.003, (z1 + z2) / 2);
-  scene.add(m);
-}
-
-function buildStatic() {
-  // Floor
-  const floorM = new THREE.MeshLambertMaterial({ color: 0x111824 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), floorM);
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  // Grid
-  scene.add(new THREE.GridHelper(50, 25, 0x1a2a3a, 0x161f2e));
-
-  // Zone tints
-  floorZone(-11, 11, -16, -2,  0x1a0808, 0.7);  // inbound  (red tint)
-  floorZone(-11, 11, -2,   3,  0x0a1520, 0.7);  // buffer   (blue tint)
-  floorZone(-11, 11,  3,  14,  0x081a0c, 0.7);  // outbound (green tint)
-
-  // Road stripes in front (outbound exit)
-  for (let i = -1; i <= 1; i += 2) {
-    const stripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.2, 4),
-      new THREE.MeshBasicMaterial({ color: 0xf1c40f, transparent: true, opacity: 0.35 })
-    );
-    stripe.rotation.x = -Math.PI / 2;
-    stripe.position.set(i * 1.5, 0.004, 14);
-    scene.add(stripe);
-  }
-
-  // Lane floor stripes (colored)
-  L.LANE_X.forEach((x, i) => {
-    const stripe = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.8, 11),
-      new THREE.MeshBasicMaterial({ color: LANE_HEX[i], transparent: true, opacity: 0.1 })
-    );
-    stripe.rotation.x = -Math.PI / 2;
-    stripe.position.set(x, 0.004, 6.5);
-    scene.add(stripe);
-  });
-
-  // Warehouse side walls
-  addBox(0.3, 5.5, 30, 0x1e2d40, -11.15, 2.75, -1, { shadow: false });
-  addBox(0.3, 5.5, 30, 0x1e2d40,  11.15, 2.75, -1, { shadow: false });
-
-  // Inbound back wall (with door cutouts — represented as pillars)
-  // Columns between door openings
-  [-9.5, -2, 2, 9.5].forEach(x => {
-    addBox(1.5, 5.5, 0.3, 0x1e2d40, x, 2.75, -8, { shadow: false });
-  });
-  // Lintel above doors
-  addBox(22, 0.5, 0.3, 0x1a2535, 0, 5.5, -8, { shadow: false });
-
-  // Door frames (H structures at each door position)
-  L.DOOR_X.forEach(x => {
-    addBox(0.25, 4.8, 0.25, 0x2a3d55, x - 1.3, 2.4, L.Z_DOOR);
-    addBox(0.25, 4.8, 0.25, 0x2a3d55, x + 1.3, 2.4, L.Z_DOOR);
-    addBox(2.9,  0.25, 0.25, 0x2a3d55, x, 4.9, L.Z_DOOR);
-  });
-
-  // Buffer zone label strip
-  addBox(22, 0.08, 4, 0x0d2035, 0, 0.04, L.Z_BUF, { shadow: false });
-}
-
-// ════════════════════════════════════════════════════════════
-//  Dynamic geometry (updated each frame)
-// ════════════════════════════════════════════════════════════
-function buildDynamic() {
-  // Buffer fill (geometry = 1×1×1, scaled each frame)
-  {
-    // Container wireframe
-    const cMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(MAX_BUF_W + 0.3, 3.2, 3.8),
-      new THREE.MeshBasicMaterial({ color: 0x2a4a6a, wireframe: true, transparent: true, opacity: 0.35 })
-    );
-    cMesh.position.set(0, 1.6, L.Z_BUF);
-    scene.add(cMesh);
-
-    // Fill (BoxGeometry 1×1×1, we scale X and Y each tick)
-    const fMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 3.4),
-      new THREE.MeshLambertMaterial({ color: 0xf39c12, transparent: true, opacity: 0.85 })
-    );
-    fMesh.castShadow = true;
-    scene.add(fMesh);
-    fo.bufFill = fMesh;
-  }
-
-  // Inbound doors: status light, truck-at-dock, progress bar
-  fo.doors = L.DOOR_X.map((x, i) => {
-    // Status LED
-    const led = new THREE.Mesh(
-      new THREE.SphereGeometry(0.28, 10, 10),
-      new THREE.MeshBasicMaterial({ color: 0x2ecc71 })
-    );
-    led.position.set(x, 5.25, L.Z_DOOR);
-    scene.add(led);
-
-    // Point light that pulses with LED (subtle)
-    const ptLight = new THREE.PointLight(0x2ecc71, 0, 6);
-    ptLight.position.set(x, 5.0, L.Z_DOOR);
-    scene.add(ptLight);
-
-    // Truck-at-dock mesh
-    const truck = box(2.4, 1.9, 4, 0x7f8c8d, { transparent: true, opacity: 0.85 });
-    truck.position.set(x, 0.95, L.Z_DOOR - 0.3);
-    truck.visible = false;
-    truck.castShadow = true;
-    scene.add(truck);
-
-    // Cab (front accent)
-    const cab = addBox(2.4, 1.9, 0.5, 0x55667a, x, 0.95, L.Z_DOOR - 2.55);
-    cab.visible = false;
-    cab.castShadow = true;
-
-    // Progress bar background
-    const pbBg = new THREE.Mesh(
-      new THREE.BoxGeometry(2.6, 0.18, 0.18),
-      new THREE.MeshBasicMaterial({ color: 0x0d1a2a })
-    );
-    pbBg.position.set(x, 5.55, L.Z_DOOR);
-    scene.add(pbBg);
-
-    // Progress bar fill (scale.x + reposition)
-    const pbFill = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.18, 0.18),
-      new THREE.MeshBasicMaterial({ color: 0xe67e22 })
-    );
-    pbFill.position.set(x, 5.55, L.Z_DOOR + 0.01);
-    scene.add(pbFill);
-
-    return { led, ptLight, truck, cab, pbFill };
-  });
-
-  // Waiting truck pool (15 slots)
-  fo.waitPool = Array.from({ length: 15 }, () => {
-    const m = box(1.9, 1.5, 3.4, 0x556688, { transparent: true, opacity: 0.8 });
-    m.visible = false;
-    m.castShadow = true;
-    scene.add(m);
-    return m;
-  });
-
-  // Lane queue bars + outbound trucks
-  fo.lanes = L.LANE_X.map((x, i) => {
-    // Queue bar (scale.y each frame; pivot at bottom via position.y = height/2)
-    const qBar = box(2.5, 1, 2.8, LANE_HEX[i], { transparent: true, opacity: 0.85 });
-    qBar.castShadow = true;
-    scene.add(qBar);
-
-    // Outbound truck body
-    const ob = box(2.4, 1.95, 4.2, LANE_HEX[i], { transparent: true, opacity: 0.45 });
-    ob.position.set(x, 0.975, L.Z_OB);
-    ob.castShadow = true;
-    scene.add(ob);
-
-    // Outbound truck cab
-    addBox(2.4, 1.95, 0.6, 0x1a2535, x, 0.975, L.Z_OB + 2.55);
-
-    // Lane label strip (thin colored band at outbound truck top)
-    const badge = addBox(2.4, 0.12, 4.2, LANE_HEX[i], x, 1.99, L.Z_OB);
-    badge.material.transparent = true;
-    badge.material.opacity = 0.6;
-
-    // Fill bar (scale.x left-to-right; base w=1, positioned per lerp)
-    const fillBar = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.28, 3.8),
-      new THREE.MeshLambertMaterial({ color: 0x2ecc71 })
-    );
-    fillBar.castShadow = false;
-    scene.add(fillBar);
-
-    // Departure timer bar (thin, below rear of ob truck)
-    const tmBg = new THREE.Mesh(
-      new THREE.BoxGeometry(2.4, 0.13, 0.13),
-      new THREE.MeshBasicMaterial({ color: 0x0d1a2a })
-    );
-    tmBg.position.set(x, 0.065, L.Z_OB + 2.2);
-    scene.add(tmBg);
-
-    const tmFill = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.13, 0.13),
-      new THREE.MeshBasicMaterial({ color: 0x2ecc71 })
-    );
-    scene.add(tmFill);
-
-    return { qBar, ob, fillBar, tmFill };
-  });
-
-  // Action request lines (lane → door, one per lane)
-  fo.actionLines = L.LANE_X.map((x, i) => {
-    const pts = [new THREE.Vector3(x, 1.5, L.Z_OB), new THREE.Vector3(x, 1.5, L.Z_DOOR)];
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({
-      color: LANE_HEX[i], transparent: true, opacity: 0, linewidth: 1
-    });
-    const line = new THREE.Line(geo, mat);
-    scene.add(line);
-    return { line, mat };
-  });
-}
-
-// ════════════════════════════════════════════════════════════
-//  Frame rendering
-// ════════════════════════════════════════════════════════════
-function lerp(a, b, t) { return a + (b - a) * t; }
-function rgb(r, g, b)   { return new THREE.Color(r / 255, g / 255, b / 255); }
-function lerpColor(c1, c2, t) { return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)]; }
-
-// green=[46,204,113]  red=[231,76,60]  yellow=[241,196,15]
-const C_GREEN  = [46, 204, 113];
-const C_RED    = [231, 76, 60];
-const C_YELLOW = [241, 196, 15];
-
-function renderFrame(fi, t) {
-  if (!simData) return;
-  const f  = simData.frames[fi];
-  const fp = fi > 0 ? simData.frames[fi - 1] : f;
-
-  // ── Buffer fill ──
-  {
-    const ratio  = lerp(fp.buffer / fp.buffer_capacity, f.buffer / f.buffer_capacity, t);
-    const w      = Math.max(ratio * MAX_BUF_W, 0.02);
-    const h      = Math.max(ratio * 2.8, 0.06);
-    fo.bufFill.scale.set(w, h, 1);
-    fo.bufFill.position.set(-MAX_BUF_W / 2 + w / 2, h / 2 + 0.05, L.Z_BUF);
-    const [r, g, b] = lerpColor(C_GREEN, C_RED, ratio);
-    fo.bufFill.material.color.set(rgb(r, g, b));
-  }
-
-  // ── Inbound doors ──
-  f.doors.forEach((door, i) => {
-    const { led, ptLight, truck, cab, pbFill } = fo.doors[i];
-
-    if (door.is_busy) {
-      led.material.color.set(0xe74c3c);
-      ptLight.color.set(0xe74c3c);
-      ptLight.intensity = 1.2;
-
-      truck.visible = true;
-      cab.visible   = true;
-      const lc = door.assigned_lane >= 0 ? LANE_HEX[door.assigned_lane] : 0x7f8c8d;
-      truck.material.color.set(lc);
-      cab.material.color.set(lc);
-
-      // Progress bar: (10 - remaining) / 10 (10 = max_door_processing)
-      const progress = Math.max(1 - door.remaining_time / 10, 0.02);
-      pbFill.scale.x = progress * 2.6;
-      pbFill.position.x = L.DOOR_X[i] - 1.3 + (progress * 2.6) / 2;
-    } else {
-      led.material.color.set(0x2ecc71);
-      ptLight.color.set(0x2ecc71);
-      ptLight.intensity = 0;
-      truck.visible = false;
-      cab.visible   = false;
-      pbFill.scale.x = 0.01;
-    }
-  });
-
-  // ── Waiting trucks ──
-  f.waiting_trucks.forEach((wt, i) => {
-    if (i >= fo.waitPool.length) return;
-    const m   = fo.waitPool[i];
-    const row = Math.floor(i / 5);
-    const col = i % 5;
-    m.visible = true;
-    m.position.set((col - 2) * 3.8, 0.75, L.Z_WAIT - row * 4.2);
-    const primary = primaryLane(wt.shipments);
-    m.material.color.set(primary >= 0 ? LANE_HEX[primary] : 0x556688);
-  });
-  for (let i = f.waiting_trucks.length; i < fo.waitPool.length; i++) {
-    fo.waitPool[i].visible = false;
-  }
-
-  // ── Lanes ──
-  f.lanes.forEach((lane, i) => {
-    const prev   = fp.lanes[i];
-    const lObj   = fo.lanes[i];
-    const x      = L.LANE_X[i];
-
-    // Queue bar
-    const qRatio = lerp(prev.queue_volume / MAX_QUEUE_VIS, lane.queue_volume / MAX_QUEUE_VIS, t);
-    const barH   = Math.max(qRatio * MAX_BAR_H, 0.06);
-    lObj.qBar.scale.set(1, barH, 1);
-    lObj.qBar.position.set(x, barH / 2, L.Z_QUEUE);
-    const [qr, qg, qb] = lerpColor(C_GREEN, C_RED, lane.congestion);
-    lObj.qBar.material.color.set(rgb(qr, qg, qb));
-
-    // Outbound truck opacity = fill level
-    const fillR = lerp(prev.outbound_fill_rate, lane.outbound_fill_rate, t);
-    lObj.ob.material.opacity = 0.3 + 0.6 * fillR;
-
-    // Fill bar (grows left to right on top of ob truck)
-    const fw = Math.max(fillR * 2.4, 0.02);
-    lObj.fillBar.scale.x = fw;
-    lObj.fillBar.position.set(x - 1.2 + fw / 2, 2.09, L.Z_OB);
-    const [fr, fg, fb] = lerpColor(C_RED, C_GREEN, fillR);
-    lObj.fillBar.material.color.set(rgb(fr, fg, fb));
-
-    // Departure timer bar (shrinks as time runs out)
-    const tmRatio = lane.outbound_departure_timer / DISPATCH_INTERVAL;
-    const tw = Math.max(tmRatio * 2.4, 0.02);
-    lObj.tmFill.scale.x = tw;
-    lObj.tmFill.position.set(x - 1.2 + tw / 2, 0.065, L.Z_OB + 2.2 + 0.01);
-    const [tr, tg] = lerpColor(C_RED, C_GREEN, tmRatio);
-    lObj.tmFill.material.color.set(rgb(tr, tg, 60));
-  });
-
-  // ── Action request lines (current frame only, no lerp) ──
-  f.lanes.forEach((lane, i) => {
-    const action = f.actions[i];
-    const { line, mat } = fo.actionLines[i];
-    if (action > 0 && action <= 3) {
-      const doorIdx = action - 1;
-      const pts = line.geometry.attributes.position;
-      pts.setXYZ(0, L.LANE_X[i], 2.5, L.Z_OB);
-      pts.setXYZ(1, L.DOOR_X[doorIdx], 2.5, L.Z_DOOR);
-      pts.needsUpdate = true;
-      mat.opacity = 0.55;
-    } else {
-      mat.opacity = 0;
-    }
-  });
-}
-
-function primaryLane(shipments) {
-  let best = -1, bestVol = -1;
-  for (const [k, v] of Object.entries(shipments)) {
-    if (v > bestVol) { bestVol = v; best = parseInt(k); }
-  }
-  return best;
-}
-
-// ════════════════════════════════════════════════════════════
-//  Playback tick
-// ════════════════════════════════════════════════════════════
-function tickPlayback() {
-  if (!playing || !simData) return;
-  const now = performance.now();
-  const dur = 1000 / FPS_LIST[fpsIdx];
-  lerpT = Math.min((now - lastTick) / dur, 1);
-  renderFrame(frame, lerpT);
-
-  if (lerpT >= 1) {
-    frame++;
-    if (frame >= simData.frames.length) {
-      frame = simData.frames.length - 1;
-      playing = false;
-      document.getElementById('btn-play').textContent = '▶ Play';
-    }
-    lastTick = now;
-    lerpT = 0;
-    syncSlider();
-    updatePanels(frame);
-  }
-}
-
-// ════════════════════════════════════════════════════════════
-//  UI panels
-// ════════════════════════════════════════════════════════════
-function updatePanels(fi) {
-  if (!simData) return;
-  const f = simData.frames[fi];
-
-  // Step display
-  document.getElementById('step-disp').textContent = `Step ${f.t} / ${simData.frames.length - 1}`;
-
-  // Step panel
-  const doorRows = f.doors.map((d, i) => {
-    const busy  = d.is_busy;
-    const col   = busy ? (d.assigned_lane >= 0 ? LANE_CSS[d.assigned_lane] : '#e74c3c') : '#2ecc71';
-    const label = busy
-      ? `처리중 · 레인 ${d.assigned_lane} · ${d.remaining_time}s`
-      : '유휴';
-    return `<div class="door-row">
-      <div class="door-dot" style="background:${col};${busy ? `box-shadow:0 0 5px ${col}` : ''}"></div>
-      <span class="door-txt">도어 ${i}: ${label}</span>
-    </div>`;
-  }).join('');
-
-  const bufRatio = f.buffer / f.buffer_capacity;
-  const bufColor = bufRatio > 0.8 ? '#e74c3c' : bufRatio > 0.5 ? '#f39c12' : '#2ecc71';
-  document.getElementById('step-info').innerHTML = `
-    <div class="row"><span class="lbl">스텝</span><span class="val">${f.t}</span></div>
-    <div class="row"><span class="lbl">버퍼</span><span class="val" style="color:${bufColor}">${f.buffer.toFixed(0)} / ${f.buffer_capacity}</span></div>
-    <div class="bar-wrap"><div class="bar" style="width:${(bufRatio*100).toFixed(1)}%;background:${bufColor}"></div></div>
-    <div class="row"><span class="lbl">대기 트럭</span><span class="val">${f.waiting_trucks.length} 대</span></div>
-    <div style="margin-top:8px"><div class="ptitle" style="margin-bottom:6px">인바운드 도어</div>${doorRows}</div>
-  `;
-
-  // Metrics panel
-  const m      = f.metrics;
-  const avgFR  = m.outbound_departures > 0 ? (m.total_fill_rate / m.outbound_departures * 100) : 0;
-  const doorUtil = m.total_steps > 0 ? (m.door_busy_steps / (m.total_steps * 3) * 100) : 0;
-  const ovColor  = m.buffer_overflow_count > 0 ? '#e74c3c' : '#2ecc71';
-  const emColor  = m.empty_departures > 0 ? '#e74c3c' : '#2ecc71';
-  document.getElementById('metrics-info').innerHTML = `
-    <div class="row"><span class="lbl">총 처리량</span><span class="val">${m.total_throughput.toFixed(0)}</span></div>
-    <div class="row"><span class="lbl">평균 탑재율</span><span class="val">${avgFR.toFixed(1)}%</span></div>
-    <div class="bar-wrap"><div class="bar" style="width:${avgFR.toFixed(1)}%;background:#2ecc71"></div></div>
-    <div class="row"><span class="lbl">아웃바운드 출발</span><span class="val">${m.outbound_departures}</span></div>
-    <div class="row"><span class="lbl">공차 출발</span><span class="val" style="color:${emColor}">${m.empty_departures}</span></div>
-    <div class="row"><span class="lbl">버퍼 오버플로우</span><span class="val" style="color:${ovColor}">${m.buffer_overflow_count}</span></div>
-    <div class="row"><span class="lbl">도어 활용률</span><span class="val">${doorUtil.toFixed(1)}%</span></div>
-  `;
-
-  // Legend / Lane panel
-  document.getElementById('legend-info').innerHTML = f.lanes.map((lane, i) => {
-    const fr = (lane.outbound_fill_rate * 100).toFixed(0);
-    const q  = lane.queue_volume.toFixed(0);
-    const t  = lane.outbound_departure_timer;
-    return `<div class="lane-row">
-      <div class="lane-dot" style="background:${LANE_CSS[i]}"></div>
-      <span class="lane-txt">${LANE_NAME[i]}  Q=${q.padStart(3)}  OB=${fr.padStart(3)}%  [${String(t).padStart(2)}s]</span>
-    </div>`;
-  }).join('');
-}
-
-function syncSlider() {
-  document.getElementById('slider').value = frame;
-  updatePanels(frame);
-}
-
-// ════════════════════════════════════════════════════════════
-//  Data loading
-// ════════════════════════════════════════════════════════════
-function loadData(data) {
-  simData = data;
-  frame   = 0;
-  playing = false;
-  lerpT   = 1;
-  document.getElementById('btn-play').textContent = '▶ Play';
-
-  const { meta } = data;
-  document.getElementById('header-meta').textContent =
-    `Policy: ${meta.policy}  ·  Seed: ${meta.seed}  ·  ${meta.num_steps} steps`;
-
-  const slider = document.getElementById('slider');
-  slider.max = data.frames.length - 1;
-  slider.value = 0;
-  document.getElementById('s-max').textContent = data.frames.length - 1;
-
-  // Show UI
-  document.getElementById('overlay').style.display = 'none';
-  ['header','step-panel','metrics-panel','legend','timeline'].forEach(id => {
-    document.getElementById(id).style.display = id === 'header' ? 'flex' : 'block';
-  });
-
-  renderFrame(0, 1);
-  updatePanels(0);
-}
-
-// ── Demo data generator ──
-function makeDemo() {
-  const N = 50;
-  const frames = [];
-  let buf = 20;
-  const qv = [8, 15, 5, 20, 10];
-  const ob = [25, 10, 35, 5, 40];
-
-  for (let t = 0; t <= N; t++) {
-    buf = Math.min(150, Math.max(0, buf + (Math.random() * 16 - 5)));
-    for (let i = 0; i < 5; i++) {
-      qv[i] = Math.max(0, qv[i] + (Math.random() * 10 - 3));
-      ob[i] = Math.min(50, Math.max(0, ob[i] + (Math.random() * 8 - 2)));
-    }
-    const departures = Math.floor(t / 4);
-    frames.push({
-      t, buffer: buf, buffer_capacity: 150,
-      waiting_trucks: Array.from({ length: Math.floor(Math.random() * 5) }, (_, j) => ({
-        arrival_time: t - j,
-        shipments: { [j % 5]: 10, [(j + 2) % 5]: 8 },
-        total_volume: 18,
-      })),
-      doors: [0, 1, 2].map(i => ({
-        door_id: i,
-        is_busy: Math.random() > 0.45,
-        remaining_time: Math.floor(Math.random() * 9) + 1,
-        assigned_lane: Math.floor(Math.random() * 5),
-        assigned_truck_volume: 20,
-        assigned_truck_shipments: { '0': 10, '1': 10 },
-      })),
-      lanes: [0, 1, 2, 3, 4].map(i => ({
-        lane_id: i,
-        queue_volume: qv[i],
-        congestion: Math.min(qv[i] / 50, 1),
-        outbound_loaded: ob[i],
-        outbound_fill_rate: ob[i] / 50,
-        outbound_departure_timer: Math.max(1, DISPATCH_INTERVAL - (t % DISPATCH_INTERVAL)),
-        outbound_capacity: 50,
-      })),
-      actions: [0, 1, 0, 2, 0],
-      rewards: [1.2, 0.8, 1.5, 0.3, 1.0],
-      metrics: {
-        total_throughput: t * 12,
-        total_fill_rate: departures * 0.68,
-        outbound_departures: departures,
-        empty_departures: Math.floor(departures * 0.1),
-        buffer_overflow_count: Math.max(0, Math.floor(t / 25)),
-        door_busy_steps: t * 2,
-        total_steps: t,
-        dwell_time_sum: t * 3, dwell_count: Math.max(1, t),
-      },
-    });
-  }
-  return { meta: { policy: 'demo', seed: 0, num_steps: N + 1, num_lanes: 5, num_doors: 3 }, frames };
-}
-
-// ════════════════════════════════════════════════════════════
-//  Event wiring
-// ════════════════════════════════════════════════════════════
-function wireUI() {
-  const fileInput = document.getElementById('file-input');
-
-  fileInput.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try { loadData(JSON.parse(ev.target.result)); }
-      catch (err) { alert('JSON 파싱 오류: ' + err.message); }
+  <header class="topbar">
+    <div class="title-block">
+      <h1>Cross-Dock Simulation Viewer</h1>
+      <div class="subline">
+        <span id="metaPolicy">policy: -</span>
+        <span id="metaSeed">seed: -</span>
+        <span id="metaSteps">steps: -</span>
+        <span id="metaSource">source: -</span>
+      </div>
+    </div>
+    <div class="control-row">
+      <select id="sourceSelect" aria-label="데이터 선택">
+        <option value="sim_heuristic.json">heuristic seed 7</option>
+        <option value="simulation_data.json">simulation_data</option>
+        <option value="sim_rl.json">rl seed 42</option>
+      </select>
+      <label class="file-label" title="JSON 파일 열기">
+        JSON
+        <input id="fileInput" type="file" accept="application/json,.json" />
+      </label>
+      <button id="resetCamera" class="icon-btn" title="카메라 초기화" aria-label="카메라 초기화">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V2L7 6.5 12 11V8c2.76 0 5 2.24 5 5 0 .86-.22 1.67-.6 2.38l2.19 1.2A7.45 7.45 0 0 0 19.5 13 7.5 7.5 0 0 0 12 5Zm-5.6 3.62A7.45 7.45 0 0 0 4.5 13 7.5 7.5 0 0 0 12 20.5V23l5-4.5-5-4.5v3a5 5 0 0 1-5-5c0-1.08.34-2.08.92-2.9L6.4 8.62Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main id="viewportShell" class="viewport-shell">
+    <canvas id="scene"></canvas>
+    <section class="hud" aria-label="주요 지표">
+      <div class="metric"><b>Step</b><span id="mStep">0</span></div>
+      <div class="metric"><b>Buffer</b><span id="mBuffer">0 / 0</span></div>
+      <div class="metric"><b>Waiting</b><span id="mWaiting">0</span></div>
+      <div class="metric"><b>Throughput</b><span id="mThroughput">0</span></div>
+      <div class="metric"><b>Avg Fill</b><span id="mFill">0%</span></div>
+      <div class="metric"><b>Overflow</b><span id="mOverflow">0</span></div>
+      <div class="metric"><b>Door Util</b><span id="mDoor">0%</span></div>
+      <div class="metric"><b>Avg Dwell</b><span id="mDwell">0</span></div>
+    </section>
+
+    <aside class="side-panel" aria-label="레인 상세">
+      <h2>Lane Status</h2>
+      <div id="laneList" class="lane-list"></div>
+    </aside>
+
+    <div id="status" class="status"></div>
+  </main>
+
+  <footer class="timeline">
+    <div class="play-group">
+      <button id="prevFrame" class="icon-btn" title="이전 프레임" aria-label="이전 프레임">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h3v14H6V5Zm4 7 8-7v14l-8-7Z"/></svg>
+      </button>
+      <button id="playPause" class="icon-btn" title="재생" aria-label="재생">
+        <svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7L8 5Z"/></svg>
+      </button>
+      <button id="nextFrame" class="icon-btn" title="다음 프레임" aria-label="다음 프레임">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5h3v14h-3V5ZM6 19V5l8 7-8 7Z"/></svg>
+      </button>
+    </div>
+    <div class="range-wrap">
+      <input id="timeline" type="range" min="0" max="100" step="1" value="0" aria-label="타임라인" />
+      <div class="ticks"><span>0</span><span id="lastTick">100</span></div>
+    </div>
+    <div id="timeReadout" class="time-readout">t=0</div>
+    <select id="speedSelect" aria-label="재생 속도">
+      <option value="2">2 fps</option>
+      <option value="4" selected>4 fps</option>
+      <option value="8">8 fps</option>
+      <option value="12">12 fps</option>
+    </select>
+  </footer>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const laneColors = [0x2563eb, 0x16a34a, 0xdc2626, 0xd97706, 0x7c3aed];
+    const laneCss = ["#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed"];
+    const laneX = [-8, -4, 0, 4, 8];
+    const doorX = [-4.7, 0, 4.7];
+    const Z = {
+      waiting: -9.3,
+      doors: -5.1,
+      buffer: -0.6,
+      lanes: 4.1,
+      outbound: 8.7
     };
-    r.readAsText(file);
-  };
 
-  document.getElementById('demo-btn').onclick = () => loadData(makeDemo());
+    const $ = (id) => document.getElementById(id);
+    const canvas = $("scene");
+    const shell = $("viewportShell");
+    const status = $("status");
+    const timeline = $("timeline");
+    const playPause = $("playPause");
+    const playIcon = $("playIcon");
+    const sourceSelect = $("sourceSelect");
+    const fileInput = $("fileInput");
+    const speedSelect = $("speedSelect");
 
-  document.addEventListener('dragover', e => e.preventDefault());
-  document.addEventListener('drop', e => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      try { loadData(JSON.parse(ev.target.result)); }
-      catch (err) { alert('JSON 파싱 오류: ' + err.message); }
+    const state = {
+      data: null,
+      frames: [],
+      frameIndex: 0,
+      playing: false,
+      fps: Number(speedSelect.value),
+      lastAdvance: 0,
+      maxDoorTime: 10,
+      source: ""
     };
-    r.readAsText(file);
-  });
 
-  document.getElementById('btn-play').onclick = () => {
-    if (!simData) return;
-    playing = !playing;
-    document.getElementById('btn-play').textContent = playing ? '⏸ Pause' : '▶ Play';
-    if (playing) { lastTick = performance.now(); lerpT = 0; }
-  };
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xd7d2c4);
+    scene.fog = new THREE.Fog(0xd7d2c4, 28, 52);
 
-  document.getElementById('btn-prev').onclick = () => {
-    if (!simData) return;
-    playing = false;
-    document.getElementById('btn-play').textContent = '▶ Play';
-    frame = Math.max(0, frame - 1);
-    renderFrame(frame, 1); syncSlider();
-  };
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  document.getElementById('btn-next').onclick = () => {
-    if (!simData) return;
-    playing = false;
-    document.getElementById('btn-play').textContent = '▶ Play';
-    frame = Math.min(simData.frames.length - 1, frame + 1);
-    renderFrame(frame, 1); syncSlider();
-  };
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 15;
+    controls.maxDistance = 42;
+    controls.maxPolarAngle = Math.PI * 0.48;
 
-  document.getElementById('btn-slow').onclick = () => {
-    fpsIdx = Math.max(0, fpsIdx - 1);
-    document.getElementById('spd-lbl').textContent = `${FPS_LIST[fpsIdx]} fps`;
-  };
-  document.getElementById('btn-fast').onclick = () => {
-    fpsIdx = Math.min(FPS_LIST.length - 1, fpsIdx + 1);
-    document.getElementById('spd-lbl').textContent = `${FPS_LIST[fpsIdx]} fps`;
-  };
+    const dynamic = new THREE.Group();
+    dynamic.name = "dynamic";
+    scene.add(dynamic);
 
-  document.getElementById('slider').oninput = e => {
-    if (!simData) return;
-    playing = false;
-    document.getElementById('btn-play').textContent = '▶ Play';
-    frame = parseInt(e.target.value);
-    renderFrame(frame, 1);
-    updatePanels(frame);
-  };
+    initLighting();
+    buildStaticScene();
+    resetCamera();
 
-  document.addEventListener('keydown', e => {
-    if (!simData) return;
-    if (e.key === ' ')          { e.preventDefault(); document.getElementById('btn-play').click(); }
-    else if (e.key === 'ArrowLeft')  document.getElementById('btn-prev').click();
-    else if (e.key === 'ArrowRight') document.getElementById('btn-next').click();
-  });
-}
+    window.addEventListener("resize", resize);
+    $("resetCamera").addEventListener("click", resetCamera);
+    $("prevFrame").addEventListener("click", () => setFrame(state.frameIndex - 1));
+    $("nextFrame").addEventListener("click", () => setFrame(state.frameIndex + 1));
+    playPause.addEventListener("click", togglePlay);
+    timeline.addEventListener("input", () => {
+      state.playing = false;
+      syncPlayIcon();
+      setFrame(Number(timeline.value));
+    });
+    speedSelect.addEventListener("change", () => {
+      state.fps = Number(speedSelect.value);
+    });
+    sourceSelect.addEventListener("change", () => loadJson(sourceSelect.value));
+    fileInput.addEventListener("change", handleFile);
+    shell.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      shell.classList.add("drop-active");
+      showStatus("JSON 파일을 놓으면 현재 시뮬레이션으로 로드합니다.");
+    });
+    shell.addEventListener("dragleave", () => {
+      shell.classList.remove("drop-active");
+      hideStatus();
+    });
+    shell.addEventListener("drop", handleDrop);
 
-// ════════════════════════════════════════════════════════════
-//  Boot
-// ════════════════════════════════════════════════════════════
-initThree();
-wireUI();
-</script>
+    resize();
+    loadJson("sim_heuristic.json");
+    animate(0);
+
+    function initLighting() {
+      scene.add(new THREE.HemisphereLight(0xfff8ea, 0x73736a, 1.7));
+
+      const key = new THREE.DirectionalLight(0xffffff, 2.2);
+      key.position.set(8, 16, 10);
+      key.castShadow = true;
+      key.shadow.mapSize.set(2048, 2048);
+      key.shadow.camera.left = -18;
+      key.shadow.camera.right = 18;
+      key.shadow.camera.top = 18;
+      key.shadow.camera.bottom = -18;
+      key.shadow.camera.near = 1;
+      key.shadow.camera.far = 38;
+      scene.add(key);
+
+      const fill = new THREE.DirectionalLight(0xffd7a0, 0.85);
+      fill.position.set(-10, 8, -8);
+      scene.add(fill);
+    }
+
+    function buildStaticScene() {
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(27, 23),
+        new THREE.MeshStandardMaterial({ color: 0xc9c1b0, roughness: 0.88, metalness: 0.03 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      const dock = new THREE.Mesh(
+        new THREE.BoxGeometry(21.5, 0.55, 2.1),
+        new THREE.MeshStandardMaterial({ color: 0xede8dd, roughness: 0.72 })
+      );
+      dock.position.set(0, 0.28, Z.doors);
+      dock.receiveShadow = true;
+      dock.castShadow = true;
+      scene.add(dock);
+
+      const flowMat = new THREE.MeshBasicMaterial({ color: 0x7b817b, transparent: true, opacity: 0.28 });
+      for (let i = 0; i < 5; i += 1) {
+        const stripe = new THREE.Mesh(new THREE.PlaneGeometry(2.35, 16.8), flowMat);
+        stripe.rotation.x = -Math.PI / 2;
+        stripe.position.set(laneX[i], 0.012, 0.6);
+        scene.add(stripe);
+      }
+
+      for (let i = 0; i < 3; i += 1) {
+        addDockFrame(doorX[i], Z.doors, i);
+      }
+
+      for (let i = 0; i < 5; i += 1) {
+        addLaneBase(i);
+      }
+
+      addZoneLabel("WAITING TRUCKS", 0, Z.waiting - 1.1, 0x353c42);
+      addZoneLabel("INBOUND DOORS", 0, Z.doors - 1.45, 0x353c42);
+      addZoneLabel("BUFFER", -10.4, Z.buffer, 0x353c42);
+      addZoneLabel("LANE QUEUES", -10.0, Z.lanes, 0x353c42);
+      addZoneLabel("OUTBOUND", -10.0, Z.outbound, 0x353c42);
+    }
+
+    function addDockFrame(x, z, id) {
+      const mat = new THREE.MeshStandardMaterial({ color: 0x514c45, roughness: 0.62 });
+      const top = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 0.18), mat);
+      top.position.set(x, 1.55, z - 0.74);
+      top.castShadow = true;
+      scene.add(top);
+
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.65, 0.18), mat);
+        post.position.set(x + side * 1.12, 0.82, z - 0.74);
+        post.castShadow = true;
+        scene.add(post);
+      }
+
+      const pad = new THREE.Mesh(
+        new THREE.BoxGeometry(2.05, 0.08, 1.65),
+        new THREE.MeshStandardMaterial({ color: 0x332f2a, roughness: 0.75 })
+      );
+      pad.position.set(x, 0.06, z + 0.25);
+      pad.receiveShadow = true;
+      scene.add(pad);
+
+      addLabel(`D${id + 1}`, x, 1.95, z - 0.78, 0x262626, 0xffffff, 0.95);
+    }
+
+    function addLaneBase(i) {
+      const color = laneColors[i];
+      const railMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.04 });
+      const queueBase = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.13, 2.9), railMat);
+      queueBase.position.set(laneX[i], 0.075, Z.lanes);
+      queueBase.receiveShadow = true;
+      scene.add(queueBase);
+
+      const outboundBase = new THREE.Mesh(
+        new THREE.BoxGeometry(2.5, 0.12, 3.25),
+        new THREE.MeshStandardMaterial({ color: 0x2f3438, roughness: 0.65 })
+      );
+      outboundBase.position.set(laneX[i], 0.07, Z.outbound);
+      outboundBase.receiveShadow = true;
+      scene.add(outboundBase);
+
+      addLabel(`L${i}`, laneX[i], 0.45, Z.lanes - 1.85, color, 0xffffff, 0.72);
+    }
+
+    function addZoneLabel(text, x, z, color) {
+      addLabel(text, x, 0.08, z, color, 0xffffff, 0.95, 512, 80, 0.018);
+    }
+
+    function clearDynamic() {
+      while (dynamic.children.length) {
+        const child = dynamic.children.pop();
+        child.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) {
+            if (Array.isArray(obj.material)) obj.material.forEach((mat) => mat.dispose());
+            else obj.material.dispose();
+          }
+          if (obj.material?.map) obj.material.map.dispose();
+        });
+      }
+    }
+
+    function renderFrame(frame) {
+      clearDynamic();
+      if (!frame) return;
+
+      drawBuffer(frame);
+      drawWaitingTrucks(frame);
+      drawDoors(frame);
+      drawLanes(frame);
+      drawActions(frame);
+      updateHud(frame);
+      updateLanePanel(frame);
+    }
+
+    function drawBuffer(frame) {
+      const cap = Number(frame.buffer_capacity || 1);
+      const fill = clamp(Number(frame.buffer || 0) / cap, 0, 1);
+      const shellMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.45,
+        transparent: true,
+        opacity: 0.38
+      });
+      const shellMesh = new THREE.Mesh(new THREE.BoxGeometry(2.05, 2.8, 4.6), shellMat);
+      shellMesh.position.set(-11.1, 1.42, Z.buffer + 1.1);
+      shellMesh.castShadow = true;
+      shellMesh.receiveShadow = true;
+      dynamic.add(shellMesh);
+
+      const levelColor = fill > 0.92 ? 0xb91c1c : fill > 0.72 ? 0xd97706 : 0x0f766e;
+      const fillMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.82, Math.max(0.05, fill * 2.45), 4.3),
+        new THREE.MeshStandardMaterial({ color: levelColor, roughness: 0.52, transparent: true, opacity: 0.78 })
+      );
+      fillMesh.position.set(-11.1, 0.18 + (fill * 2.45) / 2, Z.buffer + 1.1);
+      fillMesh.castShadow = true;
+      dynamic.add(fillMesh);
+      addDynamicLabel(`${round(frame.buffer)}/${round(cap)}`, -11.1, 3.15, Z.buffer + 1.1, 0x1d2329, 0xfffdf8, 0.82);
+
+      frame.lanes.forEach((lane, i) => {
+        const blocks = Math.min(18, Math.ceil((Number(lane.queue_volume) || 0) / 4));
+        for (let j = 0; j < blocks; j += 1) {
+          const cube = createCrate(laneColors[i], 0.3);
+          cube.position.set(
+            -9.35 + (j % 3) * 0.38,
+            0.23 + Math.floor(j / 3) * 0.34,
+            Z.buffer - 1.0 + i * 0.5
+          );
+          dynamic.add(cube);
+        }
+      });
+    }
+
+    function drawWaitingTrucks(frame) {
+      const trucks = frame.waiting_trucks || [];
+      const visible = Math.min(trucks.length, 6);
+      for (let i = 0; i < visible; i += 1) {
+        const truck = trucks[i];
+        const x = -7.7 + i * 3.05;
+        const z = Z.waiting - (i % 2) * 1.25;
+        const mainLane = dominantLane(truck.shipments);
+        drawTruck(x, 0.34, z, laneColors[mainLane] ?? 0x737373, 1.2, 1.85, 0.86);
+        addDynamicLabel(`${truck.total_volume}`, x, 0.92, z, 0x1d2329, 0xfffdf8, 0.58);
+        drawShipmentChips(truck.shipments, x - 0.45, z + 0.82, 0.1);
+      }
+      if (trucks.length > visible) {
+        addDynamicLabel(`+${trucks.length - visible}`, 10.3, 0.9, Z.waiting - 0.55, 0x1d2329, 0xfffdf8, 0.7);
+      }
+    }
+
+    function drawDoors(frame) {
+      const doors = frame.doors || [];
+      doors.forEach((door, i) => {
+        const x = doorX[i] ?? 0;
+        const z = Z.doors;
+        const busy = Boolean(door.is_busy);
+        const led = new THREE.Mesh(
+          new THREE.SphereGeometry(0.18, 18, 12),
+          new THREE.MeshStandardMaterial({
+            color: busy ? 0xdc2626 : 0x16a34a,
+            emissive: busy ? 0x671212 : 0x0b4f22,
+            emissiveIntensity: 0.45,
+            roughness: 0.35
+          })
+        );
+        led.position.set(x + 0.95, 1.72, z - 0.74);
+        dynamic.add(led);
+
+        if (busy) {
+          drawTruck(x, 0.35, z - 1.95, laneColors[clamp(door.assigned_lane, 0, 4)] ?? 0x737373, 1.05, 1.8, 0.95);
+          addDynamicLabel(`${door.assigned_truck_volume}`, x, 0.98, z - 1.95, 0x1d2329, 0xfffdf8, 0.58);
+          drawShipmentChips(door.assigned_truck_shipments, x - 0.45, z - 1.15, 0.08);
+
+          const progress = 1 - clamp((Number(door.remaining_time) || 0) / Math.max(1, state.maxDoorTime), 0, 1);
+          const frameMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.9, 0.12, 0.12),
+            new THREE.MeshStandardMaterial({ color: 0x3d3d3d, roughness: 0.5 })
+          );
+          frameMesh.position.set(x, 1.83, z + 0.2);
+          dynamic.add(frameMesh);
+          const bar = new THREE.Mesh(
+            new THREE.BoxGeometry(Math.max(0.04, 1.9 * progress), 0.13, 0.13),
+            new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.42 })
+          );
+          bar.position.set(x - 0.95 + (1.9 * progress) / 2, 1.84, z + 0.2);
+          dynamic.add(bar);
+          addDynamicLabel(`${door.remaining_time}`, x, 2.2, z + 0.18, 0x1d2329, 0xfffdf8, 0.52);
+        }
+      });
+    }
+
+    function drawLanes(frame) {
+      const lanes = frame.lanes || [];
+      lanes.forEach((lane, i) => {
+        const x = laneX[i];
+        const color = laneColors[i];
+        const capacity = Number(lane.outbound_capacity || 50);
+        const queue = Number(lane.queue_volume || 0);
+        const congestion = clamp(Number(lane.congestion || queue / capacity), 0, 1);
+        const loaded = Number(lane.outbound_loaded || 0);
+        const fillRate = clamp(Number(lane.outbound_fill_rate || loaded / capacity), 0, 1);
+        const timer = Number(lane.outbound_departure_timer || 0);
+
+        const height = Math.max(0.06, 3.1 * congestion);
+        const queueMat = new THREE.MeshStandardMaterial({
+          color: congestion > 0.92 ? 0xb91c1c : color,
+          roughness: 0.48,
+          transparent: true,
+          opacity: 0.88
+        });
+        const queueColumn = new THREE.Mesh(new THREE.BoxGeometry(0.92, height, 0.92), queueMat);
+        queueColumn.position.set(x, 0.12 + height / 2, Z.lanes);
+        queueColumn.castShadow = true;
+        dynamic.add(queueColumn);
+
+        const blocks = Math.min(18, Math.ceil(queue / 3));
+        for (let j = 0; j < blocks; j += 1) {
+          const cube = createCrate(color, 0.26);
+          cube.position.set(
+            x - 0.76 + (j % 3) * 0.34,
+            0.23 + Math.floor(j / 3) * 0.3,
+            Z.lanes + 0.82
+          );
+          dynamic.add(cube);
+        }
+
+        addDynamicLabel(`Q ${round(queue)}`, x, Math.max(0.9, height + 0.6), Z.lanes - 0.05, 0x1d2329, 0xfffdf8, 0.62);
+
+        drawOutboundTruck(i, x, Z.outbound, color, fillRate, loaded, capacity, timer);
+      });
+    }
+
+    function drawOutboundTruck(i, x, z, color, fillRate, loaded, capacity, timer) {
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.48,
+        transparent: true,
+        opacity: 0.42 + fillRate * 0.42
+      });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.72, 2.75), bodyMat);
+      body.position.set(x, 0.48, z);
+      body.castShadow = true;
+      dynamic.add(body);
+
+      const cab = new THREE.Mesh(
+        new THREE.BoxGeometry(1.55, 0.78, 0.55),
+        new THREE.MeshStandardMaterial({ color: 0x3c4146, roughness: 0.55 })
+      );
+      cab.position.set(x, 0.5, z + 1.78);
+      cab.castShadow = true;
+      dynamic.add(cab);
+
+      const blocks = Math.min(15, Math.ceil((Number(loaded) || 0) / 3.5));
+      for (let j = 0; j < blocks; j += 1) {
+        const cube = createCrate(color, 0.25);
+        cube.position.set(x - 0.62 + (j % 3) * 0.44, 0.95 + Math.floor(j / 9) * 0.32, z - 0.88 + Math.floor((j % 9) / 3) * 0.52);
+        dynamic.add(cube);
+      }
+
+      const timerRatio = clamp(timer / 20, 0, 1);
+      const timerColor = timerRatio < 0.25 ? 0xb91c1c : timerRatio < 0.55 ? 0xd97706 : 0x15803d;
+      const timerBack = new THREE.Mesh(
+        new THREE.BoxGeometry(2.12, 0.09, 0.08),
+        new THREE.MeshStandardMaterial({ color: 0x2f3438, roughness: 0.6 })
+      );
+      timerBack.position.set(x, 1.15, z - 1.58);
+      dynamic.add(timerBack);
+      const timerBar = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.max(0.04, 2.12 * timerRatio), 0.1, 0.09),
+        new THREE.MeshStandardMaterial({ color: timerColor, roughness: 0.45 })
+      );
+      timerBar.position.set(x - 1.06 + (2.12 * timerRatio) / 2, 1.16, z - 1.58);
+      dynamic.add(timerBar);
+
+      addDynamicLabel(`${Math.round(fillRate * 100)}%`, x, 1.72, z + 0.02, 0x1d2329, 0xfffdf8, 0.62);
+      addDynamicLabel(`T-${timer}`, x, 1.46, z - 1.63, 0x1d2329, 0xfffdf8, 0.45);
+    }
+
+    function drawActions(frame) {
+      const actions = frame.actions || [];
+      actions.forEach((action, lane) => {
+        const doorIndex = Number(action) - 1;
+        if (doorIndex < 0 || doorIndex >= doorX.length) return;
+        const points = [
+          new THREE.Vector3(laneX[lane], 0.16, Z.lanes - 1.1),
+          new THREE.Vector3((laneX[lane] + doorX[doorIndex]) / 2, 0.28, -1.2),
+          new THREE.Vector3(doorX[doorIndex], 0.18, Z.doors + 0.92)
+        ];
+        const curve = new THREE.CatmullRomCurve3(points);
+        const geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(24));
+        const material = new THREE.LineBasicMaterial({
+          color: laneColors[lane],
+          transparent: true,
+          opacity: 0.78
+        });
+        const line = new THREE.Line(geometry, material);
+        dynamic.add(line);
+
+        const marker = new THREE.Mesh(
+          new THREE.SphereGeometry(0.12, 16, 10),
+          new THREE.MeshBasicMaterial({ color: laneColors[lane] })
+        );
+        marker.position.copy(points[2]);
+        dynamic.add(marker);
+      });
+    }
+
+    function updateHud(frame) {
+      const metrics = frame.metrics || {};
+      const departures = Number(metrics.outbound_departures || 0);
+      const fill = departures > 0 ? Number(metrics.total_fill_rate || 0) / departures : 0;
+      const doorUtil = Number(metrics.total_steps || 0) > 0
+        ? Number(metrics.door_busy_steps || 0) / (Number(metrics.total_steps || 0) * Math.max(1, (frame.doors || []).length))
+        : 0;
+      const dwell = Number(metrics.dwell_count || 0) > 0
+        ? Number(metrics.dwell_time_sum || 0) / Number(metrics.dwell_count)
+        : 0;
+
+      $("mStep").textContent = `${frame.t}`;
+      $("mBuffer").textContent = `${round(frame.buffer)} / ${round(frame.buffer_capacity)}`;
+      $("mWaiting").textContent = `${(frame.waiting_trucks || []).length}`;
+      $("mThroughput").textContent = `${round(metrics.total_throughput || 0)}`;
+      $("mFill").textContent = `${Math.round(fill * 100)}%`;
+      $("mOverflow").textContent = `${round(metrics.buffer_overflow_count || 0)}`;
+      $("mDoor").textContent = `${Math.round(doorUtil * 100)}%`;
+      $("mDwell").textContent = `${dwell.toFixed(1)}`;
+      $("timeReadout").textContent = `t=${frame.t}`;
+    }
+
+    function updateLanePanel(frame) {
+      const laneList = $("laneList");
+      laneList.textContent = "";
+      (frame.lanes || []).forEach((lane, i) => {
+        const queue = Number(lane.queue_volume || 0);
+        const cap = Number(lane.outbound_capacity || 50);
+        const fillRate = clamp(Number(lane.outbound_fill_rate || 0), 0, 1);
+        const row = document.createElement("div");
+        row.className = "lane-row";
+        row.innerHTML = `
+          <div class="swatch" style="background:${laneCss[i]}"></div>
+          <div class="lane-main">
+            <div class="lane-name">Lane ${lane.lane_id}</div>
+            <div class="lane-bars">
+              <div class="bar"><i style="width:${Math.round(clamp(queue / cap, 0, 1) * 100)}%; background:${laneCss[i]}"></i></div>
+              <div class="bar"><i style="width:${Math.round(fillRate * 100)}%; background:#0f766e"></i></div>
+            </div>
+          </div>
+          <div class="lane-num">Q ${round(queue)}<br>OB ${Math.round(fillRate * 100)}%</div>
+        `;
+        laneList.appendChild(row);
+      });
+    }
+
+    function setFrame(index) {
+      if (!state.frames.length) return;
+      state.frameIndex = clamp(Math.round(index), 0, state.frames.length - 1);
+      timeline.value = String(state.frameIndex);
+      renderFrame(state.frames[state.frameIndex]);
+    }
+
+    function togglePlay() {
+      if (!state.frames.length) return;
+      state.playing = !state.playing;
+      if (state.playing && state.frameIndex >= state.frames.length - 1) {
+        setFrame(0);
+      }
+      syncPlayIcon();
+    }
+
+    function syncPlayIcon() {
+      playPause.title = state.playing ? "일시정지" : "재생";
+      playPause.setAttribute("aria-label", playPause.title);
+      playIcon.innerHTML = state.playing
+        ? '<path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z"/>'
+        : '<path d="M8 5v14l11-7L8 5Z"/>';
+    }
+
+    async function loadJson(url) {
+      state.source = url;
+      showStatus(`${url} 로드 중`);
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+        const data = await response.json();
+        applyData(data, url);
+        hideStatus();
+      } catch (error) {
+        showStatus(`자동 로드 실패: ${error.message}. JSON 파일을 선택하거나 로컬 서버에서 열어 주세요.`);
+      }
+    }
+
+    function applyData(data, sourceName) {
+      if (!data || !Array.isArray(data.frames) || data.frames.length === 0) {
+        throw new Error("frames 배열이 비어 있습니다.");
+      }
+      state.data = data;
+      state.frames = data.frames;
+      state.frameIndex = 0;
+      state.playing = false;
+      state.source = sourceName;
+      state.maxDoorTime = Math.max(1, ...data.frames.flatMap((frame) => (frame.doors || []).map((door) => Number(door.remaining_time || 0))));
+
+      const meta = data.meta || {};
+      $("metaPolicy").textContent = `policy: ${meta.policy ?? "-"}`;
+      $("metaSeed").textContent = `seed: ${meta.seed ?? "-"}`;
+      $("metaSteps").textContent = `steps: ${data.frames.length}`;
+      $("metaSource").textContent = `source: ${sourceName}`;
+      timeline.max = String(data.frames.length - 1);
+      $("lastTick").textContent = String(data.frames[data.frames.length - 1]?.t ?? data.frames.length - 1);
+      syncPlayIcon();
+      setFrame(initialFrameFromUrl(data.frames.length));
+    }
+
+    function initialFrameFromUrl(frameCount) {
+      const params = new URLSearchParams(window.location.search);
+      const hashMatch = window.location.hash.match(/(?:^#|[&#])t=(\d+)/);
+      const raw = params.get("t") ?? params.get("frame") ?? hashMatch?.[1] ?? "0";
+      return clamp(Number(raw), 0, frameCount - 1);
+    }
+
+    function handleFile(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      readJsonFile(file);
+      event.target.value = "";
+    }
+
+    function handleDrop(event) {
+      event.preventDefault();
+      shell.classList.remove("drop-active");
+      const file = event.dataTransfer.files?.[0];
+      if (file) readJsonFile(file);
+    }
+
+    function readJsonFile(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(String(reader.result));
+          applyData(data, file.name);
+          hideStatus();
+        } catch (error) {
+          showStatus(`JSON 파싱 실패: ${error.message}`);
+        }
+      };
+      reader.onerror = () => showStatus("파일을 읽지 못했습니다.");
+      reader.readAsText(file);
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      controls.update();
+      if (state.playing && state.frames.length) {
+        const interval = 1000 / state.fps;
+        if (now - state.lastAdvance >= interval) {
+          state.lastAdvance = now;
+          if (state.frameIndex >= state.frames.length - 1) {
+            state.playing = false;
+            syncPlayIcon();
+          } else {
+            setFrame(state.frameIndex + 1);
+          }
+        }
+      }
+      renderer.render(scene, camera);
+    }
+
+    function resize() {
+      const rect = shell.getBoundingClientRect();
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function resetCamera() {
+      const isNarrow = window.innerWidth < 760;
+      camera.position.set(isNarrow ? 15 : 18, isNarrow ? 16 : 18, isNarrow ? 22 : 20);
+      controls.target.set(0, 0.55, 0.2);
+      controls.update();
+    }
+
+    function drawTruck(x, y, z, color, width, length, opacity) {
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(width, 0.62, length),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.5, transparent: true, opacity })
+      );
+      body.position.set(x, y, z);
+      body.castShadow = true;
+      body.receiveShadow = true;
+      dynamic.add(body);
+
+      const cab = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.78, 0.58, 0.44),
+        new THREE.MeshStandardMaterial({ color: 0x2f3438, roughness: 0.55 })
+      );
+      cab.position.set(x, y, z - length * 0.62);
+      cab.castShadow = true;
+      dynamic.add(cab);
+    }
+
+    function drawShipmentChips(shipments, x, z, y) {
+      const entries = Object.entries(shipments || {}).slice(0, 3);
+      entries.forEach(([lane, volume], i) => {
+        const laneIndex = clamp(Number(lane), 0, 4);
+        const chip = new THREE.Mesh(
+          new THREE.BoxGeometry(0.28 + Math.min(0.5, Number(volume) / 45), 0.16, 0.24),
+          new THREE.MeshStandardMaterial({ color: laneColors[laneIndex], roughness: 0.44 })
+        );
+        chip.position.set(x + i * 0.44, y + 0.72, z);
+        chip.castShadow = true;
+        dynamic.add(chip);
+      });
+    }
+
+    function createCrate(color, size) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size, size, size),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.58, metalness: 0.02 })
+      );
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    function addDynamicLabel(text, x, y, z, fg, bg, scale = 0.65) {
+      const label = createLabelSprite(text, fg, bg, scale);
+      label.position.set(x, y, z);
+      dynamic.add(label);
+      return label;
+    }
+
+    function addLabel(text, x, y, z, fg, bg, scale = 0.65, width = 256, height = 96, worldScale = 0.014) {
+      const label = createLabelSprite(text, fg, bg, scale, width, height, worldScale);
+      label.position.set(x, y, z);
+      scene.add(label);
+      return label;
+    }
+
+    function createLabelSprite(text, fg, bg, scale = 0.65, width = 256, height = 96, worldScale = 0.014) {
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = width;
+      labelCanvas.height = height;
+      const ctx = labelCanvas.getContext("2d");
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = `#${bg.toString(16).padStart(6, "0")}`;
+      roundRect(ctx, 4, 4, width - 8, height - 8, 14);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(29,35,41,0.18)";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.fillStyle = `#${fg.toString(16).padStart(6, "0")}`;
+      ctx.font = `700 ${Math.max(18, Math.floor(height * 0.38))}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(text), width / 2, height / 2 + 1, width - 22);
+
+      const texture = new THREE.CanvasTexture(labelCanvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(width * worldScale * scale, height * worldScale * scale, 1);
+      return sprite;
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      const radius = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + w, y, x + w, y + h, radius);
+      ctx.arcTo(x + w, y + h, x, y + h, radius);
+      ctx.arcTo(x, y + h, x, y, radius);
+      ctx.arcTo(x, y, x + w, y, radius);
+      ctx.closePath();
+    }
+
+    function dominantLane(shipments) {
+      let lane = 0;
+      let best = -Infinity;
+      for (const [key, value] of Object.entries(shipments || {})) {
+        if (Number(value) > best) {
+          lane = Number(key);
+          best = Number(value);
+        }
+      }
+      return clamp(lane, 0, 4);
+    }
+
+    function showStatus(message) {
+      status.textContent = message;
+      status.style.display = "block";
+    }
+
+    function hideStatus() {
+      status.style.display = "none";
+      status.textContent = "";
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+    }
+
+    function round(value) {
+      const number = Number(value || 0);
+      return Math.abs(number - Math.round(number)) < 0.001 ? String(Math.round(number)) : number.toFixed(1);
+    }
+  </script>
 </body>
 </html>

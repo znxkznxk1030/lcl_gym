@@ -8,11 +8,11 @@ class Truck:
     arrival_time: int
     shipments: dict  # {lane_id: volume}
 
-    def total_volume(self) -> int:
+    def total_volume(self) -> float:
         return sum(self.shipments.values())
 
-    def volume_for_lane(self, lane_id: int) -> int:
-        return self.shipments.get(lane_id, 0)
+    def volume_for_lane(self, lane_id: int) -> float:
+        return self.shipments.get(lane_id, 0.0)
 
     @property
     def num_destinations(self) -> int:
@@ -81,8 +81,8 @@ class Lane:
 
     @property
     def congestion(self) -> float:
-        """정규화된 혼잡도 [0, 1]. soft cap = 50."""
-        return min(self.queue_volume / 50.0, 1.0)
+        """정규화된 혼잡도 [0, 1]. soft cap = 15.0 CBM (아웃바운드 트럭 1대 용량 기준)."""
+        return min(self.queue_volume / 15.0, 1.0)
 
     def add_volume(self, volume: float):
         self.queue_volume += volume

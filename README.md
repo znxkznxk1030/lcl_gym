@@ -124,10 +124,120 @@ lcl_gym/
 │   ├── train_rl.py               # DQN 학습 루프 + 체크포인트 저장
 │   └── evaluate_rl.py            # 학습 곡선 요약 + 베이스라인 비교
 │
+├── viz/                          # 3D 시각화 도구
+│   ├── export_simulation.py      # 에피소드 → JSON 익스포트 스크립트
+│   ├── index.html                # Three.js 기반 3D 뷰어
+│   └── simulation_data.json      # 기본 출력 JSON (export 결과)
+│
 ├── run_simulation.py             # 베이스라인 벤치마크 실행
 ├── checkpoints/                  # 학습 가중치 및 로그 저장
 └── README.md
 ```
+
+---
+
+## 3D 시각화 (viz/)
+
+시뮬레이션 에피소드를 Three.js 기반 3D 뷰어로 재생할 수 있습니다.
+
+### 구성
+
+| 파일 | 역할 |
+|---|---|
+| `viz/export_simulation.py` | 환경을 실행하고 매 스텝 상태를 JSON으로 저장 |
+| `viz/index.html` | Three.js 3D 뷰어 (브라우저에서 직접 열기) |
+
+### 사용 순서
+
+**1단계 — JSON 생성**
+
+```bash
+# greedy 정책으로 에피소드 실행 → viz/simulation_data.json 저장
+python viz/export_simulation.py
+
+# 정책 / 시드 / 출력 경로 지정
+python viz/export_simulation.py --policy heuristic --seed 7
+python viz/export_simulation.py --policy rl --checkpoint checkpoints/run_20260416_214835/weights_final.npz
+python viz/export_simulation.py --policy random --output viz/sim_random.json
+```
+
+사용 가능한 정책: `greedy` / `fifo` / `random` / `heuristic` / `rl`
+
+**2단계 — 브라우저에서 뷰어 열기**
+
+```bash
+open viz/index.html   # macOS
+# 또는 브라우저에서 파일 직접 열기
+```
+
+열리면 **파일 열기** 버튼으로 JSON을 불러오거나, **데모 실행**으로 랜덤 데이터를 바로 확인할 수 있습니다.  
+JSON 파일을 창에 드래그 앤 드롭하는 것도 지원합니다.
+
+### 뷰어 화면 구성
+
+```
+┌────────────────────────────────────────┐
+│ Header: Policy · Seed · Steps          │
+├───────────────────┬────────────────────┤
+│ Step Info 패널    │   Metrics 패널     │
+│ - 현재 스텝       │ - 총 처리량        │
+│ - 버퍼 점유량     │ - 평균 탑재율      │
+│ - 대기 트럭 수    │ - 버퍼 오버플로우  │
+│ - 인바운드 도어   │ - 도어 활용률      │
+├───────────────────┴────────────────────┤
+│          Three.js 3D 뷰포트            │
+│  [대기 트럭] → [인바운드 도어] → [버퍼]│
+│           → [레인 큐] → [아웃바운드]   │
+├────────────────────────────────────────┤
+│ Lanes 범례 (레인별 Q / OB% / 출발타이머)│
+├────────────────────────────────────────┤
+│ Timeline: ◀ ▶ Play · 슬라이더 · fps   │
+└────────────────────────────────────────┘
+```
+
+### 주요 구역 (Buffer / Lane Staging / OB Truck)
+
+| 구역 | 위치 | 데이터 소스 | 시각화 방식 | 박스 1개의 의미 |
+|---|---|---|---|---|
+| **Buffer** | 도어 바로 뒤 (Z=0) | `lane.queue_volume` (레인별 합산) | 레인 색상별 2열 박스 스택 (최대 12개/레인) | 1 CBM 화물 |
+| **Lane Staging** | 레인 대기 구역 (Z=5) | `lane.queue_volume` | 레인 색상 단일 열 박스 스택 (최대 15개) | 1 CBM 화물 |
+| **OB Truck** | 아웃바운드 트럭 내부 (Z=10) | `outbound_loaded` | 3열 × N행 바닥 배치 (최대 15개) | 1 CBM 적재 완료 |
+
+> Buffer와 Lane Staging은 같은 `queue_volume` 값을 표현합니다. Buffer는 시설 전체의 재고 분포를, Lane Staging은 레인별 깊이를 강조하는 시각입니다.
+
+### 3D 오브젝트 의미
+
+| 오브젝트 | 설명 |
+|---|---|
+| 후방 대기 트럭 (회색/레인색 큐브) | 도어 배정 대기 중인 인바운드 트럭. 주요 목적지 레인 색으로 표시 |
+| 인바운드 도어 LED | 초록=유휴, 빨강=처리 중 |
+| 도어 위 프로그레스바 | 현재 트럭 처리 진행률 |
+| Buffer 컬러 박스 스택 | 레인별 색상으로 구분된 CBM 단위 화물. 스택 높이 = 해당 레인 재고량 |
+| Lane Staging 박스 기둥 | 레인별 단일 컬럼 스택. 기둥 높이 = `queue_volume` CBM |
+| 아웃바운드 트럭 내부 박스 | 트럭 바닥에 3열로 채워지는 박스. 박스 수 = `outbound_loaded` CBM |
+| 아웃바운드 트럭 몸체 | 레인 색으로 표시. 투명도 = 탑재율 |
+| 아웃바운드 타이머 바 | 출발 카운트다운. 줄어들수록 빨간색 |
+| 에이전트 요청 선 | 레인 → 도어로 향하는 컬러 선 (해당 스텝에 요청한 경우) |
+
+### 조작 단축키
+
+| 키 / 마우스 | 동작 |
+|---|---|
+| `Space` | 재생 / 일시정지 |
+| `←` / `→` | 이전 / 다음 스텝 |
+| `+` / `−` 버튼 | 재생 속도 변경 (0.5 / 1 / 2 / 4 / 8 fps) |
+| 마우스 드래그 | 카메라 회전 (OrbitControls) |
+| 마우스 휠 | 줌 인 / 아웃 |
+| 슬라이더 | 임의 스텝으로 이동 |
+
+### export_simulation.py 옵션
+
+| 옵션 | 기본값 | 설명 |
+|---|---|---|
+| `--policy` | `greedy` | 실행할 정책 (`greedy/fifo/random/heuristic/rl`) |
+| `--seed` | `42` | 환경 랜덤 시드 |
+| `--checkpoint` | `checkpoints/weights_final.npz` | RL 가중치 경로 (`--policy rl` 전용) |
+| `--output` | `viz/simulation_data.json` | 출력 JSON 경로 |
 
 ---
 
