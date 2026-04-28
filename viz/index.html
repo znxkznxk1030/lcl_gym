@@ -545,6 +545,7 @@
       fps: Number(speedSelect.value),
       lastAdvance: 0,
       maxDoorTime: 10,
+      maxDispatchInterval: 28,
       source: ""
     };
 
@@ -870,6 +871,8 @@
 
     function drawLanes(frame) {
       const lanes = frame.lanes || [];
+      // 가장 타이머가 낮은 레인 — 곧 출발 강조용
+      const minTimer = Math.min(...lanes.map((l) => Number(l.outbound_departure_timer || Infinity)));
       lanes.forEach((lane, i) => {
         const x = laneX[i];
         const color = laneColors[i];
@@ -879,6 +882,7 @@
         const loaded = Number(lane.outbound_loaded || 0);
         const fillRate = clamp(Number(lane.outbound_fill_rate || loaded / capacity), 0, 1);
         const timer = Number(lane.outbound_departure_timer || 0);
+        const soonest = timer === minTimer;
 
         const height = Math.max(0.06, 3.1 * congestion);
         const queueMat = new THREE.MeshStandardMaterial({
@@ -905,11 +909,11 @@
 
         addDynamicLabel(`Q ${round(queue)}`, x, Math.max(0.9, height + 0.6), Z.lanes - 0.05, 0x1d2329, 0xfffdf8, 0.62);
 
-        drawOutboundTruck(i, x, Z.outbound, color, fillRate, loaded, capacity, timer);
+        drawOutboundTruck(i, x, Z.outbound, color, fillRate, loaded, capacity, timer, soonest);
       });
     }
 
-    function drawOutboundTruck(i, x, z, color, fillRate, loaded, capacity, timer) {
+    function drawOutboundTruck(i, x, z, color, fillRate, loaded, capacity, timer, soonest = false) {
       const bodyMat = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.48,
@@ -920,6 +924,17 @@
       body.position.set(x, 0.48, z);
       body.castShadow = true;
       dynamic.add(body);
+
+      // 곧 출발할 트럭: 헤드라이트 링 강조
+      if (soonest) {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(1.28, 0.07, 8, 32),
+          new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.82 })
+        );
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(x, 0.52, z);
+        dynamic.add(ring);
+      }
 
       const cab = new THREE.Mesh(
         new THREE.BoxGeometry(1.55, 0.78, 0.55),
@@ -936,7 +951,8 @@
         dynamic.add(cube);
       }
 
-      const timerRatio = clamp(timer / 20, 0, 1);
+      // 타이머 바: dispatch_interval_max 기준으로 정규화
+      const timerRatio = clamp(timer / state.maxDispatchInterval, 0, 1);
       const timerColor = timerRatio < 0.25 ? 0xb91c1c : timerRatio < 0.55 ? 0xd97706 : 0x15803d;
       const timerBack = new THREE.Mesh(
         new THREE.BoxGeometry(2.12, 0.09, 0.08),
@@ -951,8 +967,13 @@
       timerBar.position.set(x - 1.06 + (2.12 * timerRatio) / 2, 1.16, z - 1.58);
       dynamic.add(timerBar);
 
-      addDynamicLabel(`${Math.round(fillRate * 100)}%`, x, 1.72, z + 0.02, 0x1d2329, 0xfffdf8, 0.62);
-      addDynamicLabel(`T-${timer}`, x, 1.46, z - 1.63, 0x1d2329, 0xfffdf8, 0.45);
+      // 적재율 — 채워진 비율과 CBM 수치를 함께 표시
+      const fillLabel = fillRate > 0.01
+        ? `${Math.round(fillRate * 100)}% (${Math.round(loaded)}cbm)`
+        : `empty`;
+      const fillFg = fillRate > 0.85 ? 0x15803d : fillRate > 0.4 ? 0x92400e : 0x6b7280;
+      addDynamicLabel(fillLabel, x, 1.72, z + 0.02, fillFg, 0xfffdf8, 0.58);
+      addDynamicLabel(`T-${timer}`, x, 1.46, z - 1.63, 0x1d2329, soonest ? 0xfef3c7 : 0xfffdf8, soonest ? 0.55 : 0.45);
     }
 
     function drawActions(frame) {
@@ -1025,7 +1046,7 @@
               <div class="bar"><i style="width:${Math.round(fillRate * 100)}%; background:#0f766e"></i></div>
             </div>
           </div>
-          <div class="lane-num">Q ${round(queue)}<br>OB ${Math.round(fillRate * 100)}%</div>
+          <div class="lane-num">Q ${round(queue)}cbm<br>적재 ${Math.round(fillRate * 100)}%</div>
         `;
         laneList.appendChild(row);
       });
@@ -1079,6 +1100,8 @@
       state.playing = false;
       state.source = sourceName;
       state.maxDoorTime = Math.max(1, ...data.frames.flatMap((frame) => (frame.doors || []).map((door) => Number(door.remaining_time || 0))));
+      state.maxDispatchInterval = Number((data.meta || {}).dispatch_interval_max || 0) ||
+        Math.max(1, ...data.frames.flatMap((frame) => (frame.lanes || []).map((lane) => Number(lane.outbound_departure_timer || 0))));
 
       const meta = data.meta || {};
       $("metaPolicy").textContent = `policy: ${meta.policy ?? "-"}`;

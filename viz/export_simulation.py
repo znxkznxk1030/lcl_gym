@@ -18,7 +18,7 @@ import sys
 # 프로젝트 루트를 path에 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from env.crossdock_env import CrossDockEnv
+from env.crossdock_env import CrossDockEnv, DEFAULT_CONFIG
 from env.policies import GreedyPolicy, RandomPolicy, FIFOPolicy, HeuristicPriorityPolicy
 
 POLICY_MAP = {
@@ -203,6 +203,7 @@ def main():
             "num_steps": len(frames),
             "num_lanes": 5,
             "num_doors": 3,
+            "dispatch_interval_max": DEFAULT_CONFIG["dispatch_interval_max"],
             "final_metrics": {
                 k: float(v) if isinstance(v, (int, float)) else v
                 for k, v in metrics.items()

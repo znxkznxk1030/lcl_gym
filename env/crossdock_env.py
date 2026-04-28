@@ -30,7 +30,11 @@ DEFAULT_CONFIG = {
     "inbound_vol_min": 0.5,       # CBM — 목적지당 최소 화물량
     "inbound_vol_max": 5.0,       # CBM — 목적지당 최대 화물량
     "outbound_capacity": 15.0,    # CBM — 아웃바운드 트럭 1대 최대 적재량 (소형 트럭)
-    "dispatch_interval": 20,      # 아웃바운드 출발 주기 (스텝)
+    "dispatch_interval": 20,      # use_staggered_dispatch=False 일 때만 사용
+    # 스케줄 기반 출고
+    "use_staggered_dispatch": True,
+    "dispatch_interval_min": 12,  # 레인별 출발 주기 최솟값 (스텝)
+    "dispatch_interval_max": 28,  # 레인별 출발 주기 최댓값 (스텝)
     # 스케줄 기반 입고
     "use_scheduled_arrivals": True,
     "arrival_count_min": 8,       # 에피소드당 최소 인바운드 트럭 수
@@ -65,9 +69,12 @@ class CrossDockEnv:
         self.inbound_max_dest: int      = cfg["inbound_max_dest"]
         self.inbound_vol_min: float     = cfg["inbound_vol_min"]
         self.inbound_vol_max: float     = cfg["inbound_vol_max"]
-        self.outbound_capacity: float   = cfg["outbound_capacity"]
-        self.dispatch_interval: int     = cfg["dispatch_interval"]
-        self.reward_alpha: float        = cfg["reward_alpha"]
+        self.outbound_capacity: float     = cfg["outbound_capacity"]
+        self.dispatch_interval: int       = cfg["dispatch_interval"]
+        self.use_staggered_dispatch: bool = cfg["use_staggered_dispatch"]
+        self.dispatch_interval_min: int   = cfg["dispatch_interval_min"]
+        self.dispatch_interval_max: int   = cfg["dispatch_interval_max"]
+        self.reward_alpha: float          = cfg["reward_alpha"]
         self.reward_beta: float         = cfg["reward_beta"]
         self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
         self.arrival_count_min: int     = cfg["arrival_count_min"]
@@ -110,12 +117,12 @@ class CrossDockEnv:
         self.lanes = [Lane(lane_id=k) for k in range(self.num_lanes)]
         self.doors = [Door(door_id=i) for i in range(self.num_inbound_doors)]
 
-        # 각 레인마다 아웃바운드 트럭 1대 대기
+        # 각 레인마다 아웃바운드 트럭 1대 대기 — 초기 타이머를 랜덤하게 배분해 출발 시각 분산
         self.outbound_trucks = [
             OutboundTruck(
                 lane_id=k,
                 capacity=self.outbound_capacity,
-                departure_timer=self.dispatch_interval,
+                departure_timer=self._sample_dispatch_timer(initial=True),
             )
             for k in range(self.num_lanes)
         ]
@@ -162,6 +169,9 @@ class CrossDockEnv:
             self.waiting_trucks, self.outbound_trucks,
         )
         self._assign_doors(allocation)
+
+        # 5.5. 레인 큐 → 아웃바운드 트럭 지속 적재 (매 스텝 점진 탑재)
+        self._progressive_load()
 
         # 6. 아웃바운드 트럭 출발 처리
         depart_info = self._depart_outbound()
@@ -226,6 +236,14 @@ class CrossDockEnv:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _sample_dispatch_timer(self, initial: bool = False) -> int:
+        if not self.use_staggered_dispatch:
+            return self.dispatch_interval
+        if initial:
+            # 첫 출발을 레인마다 분산시키기 위해 [1, max] 전 구간에서 샘플
+            return int(self.rng.integers(1, self.dispatch_interval_max + 1))
+        return int(self.rng.integers(self.dispatch_interval_min, self.dispatch_interval_max + 1))
 
     def _build_arrival_schedule(self) -> List[Truck]:
         """에피소드 시작 시 전체 입고 스케줄을 미리 생성."""
@@ -314,38 +332,38 @@ class CrossDockEnv:
             )
             self.doors[door_idx].assign(truck, lane_id, processing_time)
 
+    def _progressive_load(self):
+        """레인 큐 → 아웃바운드 트럭으로 매 스텝 점진 적재.
+        화물이 레인에 도착하는 즉시 대기 트럭에 탑재해 fill_rate가 실시간으로 증가."""
+        for k, lane in enumerate(self.lanes):
+            ob = self.outbound_trucks[k]
+            if ob.space_remaining > 0 and lane.queue_volume > 0:
+                transferable = min(lane.queue_volume, ob.space_remaining)
+                ob.load(transferable)
+                lane.take_volume(transferable)
+                self.buffer = max(self.buffer - transferable, 0.0)
+
     def _depart_outbound(self) -> List[dict]:
-        """
-        아웃바운드 트럭 출발 처리.
-        타이머가 0이 된 레인의 아웃바운드 트럭:
-          1) 레인 큐에서 잔여 capacity만큼 탑재
-          2) fill_rate 기록
-          3) 새 아웃바운드 트럭으로 교체
-        반환: 레인별 출발 정보 리스트 (출발 없으면 None)
+        """아웃바운드 트럭 출발 처리.
+        타이머가 0이 되면 현재 적재된 화물로 출발 후 새 트럭 교체.
+        (화물 탑재는 _progressive_load에서 이미 처리됨)
         """
         depart_info = []
         for k in range(self.num_lanes):
             ob = self.outbound_trucks[k]
             if ob.tick():
-                # 레인 큐에서 화물 탑재 (용량 범위 내)
-                loaded = ob.load(self.lanes[k].take_volume(ob.space_remaining))
                 fill = ob.fill_rate
-
-                # 버퍼에서 차감
-                self.buffer = max(self.buffer - ob.loaded, 0.0)
-
                 depart_info.append({
                     "lane_id":   k,
                     "loaded":    ob.loaded,
                     "fill_rate": fill,
                     "empty":     fill < 0.1,
                 })
-
-                # 새 아웃바운드 트럭 생성
+                # 새 아웃바운드 트럭 생성 — 출발 주기 랜덤 배분
                 self.outbound_trucks[k] = OutboundTruck(
                     lane_id=k,
                     capacity=self.outbound_capacity,
-                    departure_timer=self.dispatch_interval,
+                    departure_timer=self._sample_dispatch_timer(),
                 )
             else:
                 depart_info.append(None)

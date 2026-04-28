@@ -9,7 +9,8 @@
       "Bash(python evaluate_rl.py --episodes 30)",
       "Bash(python rl/evaluate_rl.py --episodes 5)",
       "Bash(python run_simulation.py --verbose --steps 8)",
-      "Bash(python viz/export_simulation.py --policy heuristic --seed 42 --output viz/simulation_data.json)"
+      "Bash(python viz/export_simulation.py --policy heuristic --seed 42 --output viz/simulation_data.json)",
+      "Bash(python -c ' *)"
     ]
   }
 }
