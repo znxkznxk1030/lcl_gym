@@ -15,7 +15,6 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 
 from .entities import Lane, Door, Truck, OutboundTruck
-from .conflict_resolver import ConflictResolver
 
 
 DEFAULT_CONFIG = {
@@ -37,10 +36,10 @@ DEFAULT_CONFIG = {
     "dispatch_interval_max": 28,  # 레인별 출발 주기 최댓값 (스텝)
     # 스케줄 기반 입고
     "use_scheduled_arrivals": True,
-    "arrival_count_min": 8,       # 에피소드당 최소 인바운드 트럭 수
-    "arrival_count_max": 15,      # 에피소드당 최대 인바운드 트럭 수
-    "arrival_pattern": "uniform", # "uniform" | "clustered"
-    "arrival_cluster_count": 2,   # clustered 패턴에서 클러스터(배송 배치) 수
+    "arrival_count_min": 50,      # 에피소드당 최소 인바운드 트럭 수
+    "arrival_count_max": 70,      # 에피소드당 최대 인바운드 트럭 수
+    "arrival_pattern": "clustered", # "uniform" | "clustered"
+    "arrival_cluster_count": 4,   # clustered 패턴에서 클러스터(배송 배치) 수
     # reward weights
     "reward_alpha": 0.7,          # 팀 보상 비중
     "reward_beta": 0.3,           # 개인 보상 비중
@@ -82,11 +81,6 @@ class CrossDockEnv:
         self.arrival_pattern: str       = cfg["arrival_pattern"]
         self.arrival_cluster_count: int = cfg["arrival_cluster_count"]
 
-        self.resolver = ConflictResolver(
-            alpha=cfg["cr_alpha"],
-            beta=cfg["cr_beta"],
-            gamma=cfg["cr_gamma"],
-        )
 
         self._seed = seed
         self.rng = np.random.default_rng(seed)
@@ -162,13 +156,8 @@ class CrossDockEnv:
         # 4. 대기열에 새 트럭 추가
         self.waiting_trucks.extend(new_trucks)
 
-        # 5. 행동 수집 → 충돌 해결 → 도어 배정
-        requests = {k: actions[k] for k in range(self.num_lanes)}
-        allocation = self.resolver.resolve(
-            requests, self.lanes, self.doors,
-            self.waiting_trucks, self.outbound_trucks,
-        )
-        self._assign_doors(allocation)
+        # 5. 행동 수집 → 요청 레인을 우선순위 순으로 유휴 도어에 배정
+        self._assign_doors(actions)
 
         # 5.5. 레인 큐 → 아웃바운드 트럭 지속 적재 (매 스텝 점진 탑재)
         self._progressive_load()
@@ -250,8 +239,10 @@ class CrossDockEnv:
         n = int(self.rng.integers(self.arrival_count_min, self.arrival_count_max + 1))
 
         if self.arrival_pattern == "clustered":
-            # 클러스터 중심 근처에 트럭 몰아서 배치 (실제 배송 배치 패턴)
-            centers = self.rng.uniform(0.1, 0.9, size=self.arrival_cluster_count) * self.episode_length
+            # 클러스터 중심을 에피소드 전반에 균등 배치 + 소폭 랜덤 오프셋
+            base = np.linspace(0.1, 0.9, self.arrival_cluster_count)
+            jitter = self.rng.uniform(-0.05, 0.05, size=self.arrival_cluster_count)
+            centers = np.clip(base + jitter, 0.05, 0.95) * self.episode_length
             cluster_ids = self.rng.integers(0, self.arrival_cluster_count, size=n)
             spread = self.episode_length * 0.08  # 클러스터 폭 (에피소드의 8%)
             raw_times = centers[cluster_ids] + self.rng.normal(0, spread, size=n)
@@ -322,15 +313,25 @@ class CrossDockEnv:
                 self.metrics["dwell_count"] += 1
         return overflow
 
-    def _assign_doors(self, allocation: Dict[int, int]):
-        for door_idx, lane_id in allocation.items():
+    def _assign_doors(self, actions: List[int]):
+        """요청(action=1)한 레인을 긴급도 순으로 정렬, 유휴 도어에 차례로 배정."""
+        idle_doors = [d for d in self.doors if not d.is_busy]
+        if not idle_doors or not self.waiting_trucks:
+            return
+
+        requesting = [k for k, a in enumerate(actions) if a == 1]
+        if not requesting:
+            return
+
+        # 긴급도: 아웃바운드 출발까지 남은 시간이 짧을수록 높은 우선순위
+        requesting.sort(key=lambda k: self.outbound_trucks[k].departure_timer)
+
+        for door, lane_id in zip(idle_doors, requesting):
             if not self.waiting_trucks:
                 break
             truck = self.waiting_trucks.pop(0)
-            processing_time = int(
-                self.rng.integers(1, self.max_door_processing + 1)
-            )
-            self.doors[door_idx].assign(truck, lane_id, processing_time)
+            processing_time = int(self.rng.integers(1, self.max_door_processing + 1))
+            door.assign(truck, lane_id, processing_time)
 
     def _progressive_load(self):
         """레인 큐 → 아웃바운드 트럭으로 매 스텝 점진 적재.

@@ -15,21 +15,22 @@ from rl.networks import NumpyMLP
 
 
 # 관측 벡터 정규화 상수 (crossdock_env DEFAULT_CONFIG 기준)
-# obs layout (size = 7 + num_doors):
+# obs layout (size = 8 + num_doors):
 #   0: lane_queue, 1: congestion, 2: outbound_fill_rate,
 #   3: outbound_departure_in, 4: buffer_remaining,
-#   5: idle_doors, 6: waiting_trucks, 7..: door_matches
+#   5: idle_doors, 6: waiting_trucks, 7: scheduled_trucks, 8..: door_matches
 _OBS_SCALE = np.array([
     50.0,   # 0: lane_queue              / 50
     1.0,    # 1: congestion              (이미 0~1)
     1.0,    # 2: outbound_fill_rate      (이미 0~1)
-    20.0,   # 3: outbound_departure_in   / dispatch_interval
+    28.0,   # 3: outbound_departure_in   / dispatch_interval_max
     150.0,  # 4: buffer_remaining        / buffer_capacity
     3.0,    # 5: idle_doors              / num_doors
-    10.0,   # 6: waiting_trucks          / soft max
-    1.0,    # 7: door_match_0            (이미 0~1)
-    1.0,    # 8: door_match_1
-    1.0,    # 9: door_match_2
+    15.0,   # 6: waiting_trucks          / soft max
+    50.0,   # 7: scheduled_trucks        / soft max
+    1.0,    # 8: door_match_0            (이미 0~1)
+    1.0,    # 9: door_match_1
+    1.0,    # 10: door_match_2
 ], dtype=np.float32)
 
 
@@ -56,14 +57,13 @@ class QLearningPolicy(BasePolicy):
         self.rng = rng or np.random.default_rng()
 
     def act(self, obs: np.ndarray, num_doors: int) -> int:
-        """epsilon-greedy 행동 선택. 반환: 0 ~ num_doors"""
+        """epsilon-greedy 행동 선택. 반환: 0 (skip) 또는 1 (request)"""
         if self.rng.random() < self.epsilon:
-            return int(self.rng.integers(0, num_doors + 1))
+            return int(self.rng.integers(0, 2))
 
         obs_norm = normalize_obs(obs)
         q = self.net.forward(obs_norm)
-        q = q[: num_doors + 1]
-        return int(np.argmax(q))
+        return int(np.argmax(q[:2]))
 
     def reset(self):
         pass

@@ -43,11 +43,11 @@ def shape_rewards(
     for k, (r, obs, action) in enumerate(zip(env_rewards, obs_list, actions)):
         congestion = float(obs[1])
         door_match = 0.0
-        if action > 0:
-            door_idx = action - 1
-            match_start = 7
-            if match_start + door_idx < len(obs):
-                door_match = float(obs[match_start + door_idx])
+        if action == 1:
+            match_start = 8
+            door_matches = obs[match_start: match_start + num_doors]
+            if len(door_matches) > 0:
+                door_match = float(door_matches.max())
 
         bonus = 1.0 * door_match - 0.1 * congestion
         shaped.append(r + bonus)
@@ -82,7 +82,7 @@ def train(
     env = CrossDockEnv(config, seed=seed)
     n_agents  = env.num_lanes
     obs_size  = env.obs_size
-    n_actions = env.num_inbound_doors + 1
+    n_actions = 2  # 0=skip, 1=request
 
     # ── 네트워크 초기화 ───────────────────────────────────────────────
     if shared_weights:

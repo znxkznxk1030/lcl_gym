@@ -4,3 +4,6 @@ __pycache__/
 
 # 시뮬레이션 익스포트 데이터
 viz/*.json
+
+# 학습 체크포인트 (대용량 바이너리)
+checkpoints/
