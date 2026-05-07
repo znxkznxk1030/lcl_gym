@@ -47,6 +47,23 @@ DEFAULT_CONFIG = {
     "cr_alpha": 1.0,
     "cr_beta": 1.0,
     "cr_gamma": 1.0,
+    # ── 돌발사항 (Disruptions) ──────────────────────────────────────────
+    "enable_disruptions": False,
+    # 1) 도어 고장: 랜덤 도어 1개가 N스텝간 마비 (처리 중 트럭도 대기열로 복귀)
+    "disruption_door_failure": False,
+    "disruption_door_failure_prob": 0.015,       # 스텝당 발생 확률
+    "disruption_door_failure_duration_min": 5,
+    "disruption_door_failure_duration_max": 12,
+    # 2) 긴급 트럭: 미스케줄 고용량 트럭이 돌발 도착 (전 레인 화물 혼재, 대기열 앞 삽입)
+    "disruption_rush_truck": False,
+    "disruption_rush_truck_prob": 0.025,         # 스텝당 발생 확률
+    "disruption_rush_volume_min": 6.0,           # 레인당 화물량 CBM
+    "disruption_rush_volume_max": 12.0,
+    # 3) 아웃바운드 타이머 쇼크: 특정 레인 출발 타이머가 강제로 단축
+    "disruption_timer_shock": False,
+    "disruption_timer_shock_prob": 0.025,        # 스텝·레인당 발생 확률
+    "disruption_timer_shock_min": 2,             # 강제 잔여 스텝 범위
+    "disruption_timer_shock_max": 4,
 }
 
 
@@ -80,6 +97,23 @@ class CrossDockEnv:
         self.arrival_count_max: int     = cfg["arrival_count_max"]
         self.arrival_pattern: str       = cfg["arrival_pattern"]
         self.arrival_cluster_count: int = cfg["arrival_cluster_count"]
+
+        # 돌발사항 설정
+        self.enable_disruptions: bool            = cfg["enable_disruptions"]
+        self.disruption_door_failure: bool       = cfg["disruption_door_failure"]
+        self.disruption_door_failure_prob: float = cfg["disruption_door_failure_prob"]
+        self.disruption_door_failure_dur_min: int = cfg["disruption_door_failure_duration_min"]
+        self.disruption_door_failure_dur_max: int = cfg["disruption_door_failure_duration_max"]
+        self.disruption_rush_truck: bool         = cfg["disruption_rush_truck"]
+        self.disruption_rush_truck_prob: float   = cfg["disruption_rush_truck_prob"]
+        self.disruption_rush_vol_min: float      = cfg["disruption_rush_volume_min"]
+        self.disruption_rush_vol_max: float      = cfg["disruption_rush_volume_max"]
+        self.disruption_timer_shock: bool        = cfg["disruption_timer_shock"]
+        self.disruption_timer_shock_prob: float  = cfg["disruption_timer_shock_prob"]
+        self.disruption_timer_shock_min: int     = cfg["disruption_timer_shock_min"]
+        self.disruption_timer_shock_max: int     = cfg["disruption_timer_shock_max"]
+
+        self.disruption_log: List[dict] = []  # 현재 스텝 돌발 기록
 
 
         self._seed = seed
@@ -122,15 +156,20 @@ class CrossDockEnv:
         ]
 
         self.metrics = {
-            "total_throughput": 0.0,        # 아웃바운드 탑재된 총 화물량
-            "total_fill_rate": 0.0,         # 아웃바운드 출발 탑재율 합산
-            "outbound_departures": 0,       # 총 아웃바운드 출발 횟수
-            "empty_departures": 0,          # 빈 채로 출발한 횟수 (fill_rate < 0.1)
+            "total_throughput": 0.0,
+            "total_fill_rate": 0.0,
+            "outbound_departures": 0,
+            "empty_departures": 0,
             "buffer_overflow_count": 0,
             "door_busy_steps": 0,
             "total_steps": 0,
             "dwell_time_sum": 0.0,
             "dwell_count": 0,
+            # 돌발사항 카운터
+            "disruption_door_failures": 0,
+            "disruption_interrupted_trucks": 0,
+            "disruption_rush_trucks": 0,
+            "disruption_timer_shocks": 0,
         }
 
         return self.get_obs()
@@ -143,6 +182,11 @@ class CrossDockEnv:
         self, actions: List[int]
     ) -> Tuple[List[np.ndarray], List[float], bool, Dict]:
         assert len(actions) == self.num_lanes
+
+        # 0. 돌발사항 적용
+        self.disruption_log = []
+        if self.enable_disruptions:
+            self._apply_disruptions()
 
         # 1. 인바운드 트럭 도착 생성
         new_trucks = self._generate_arrivals()
@@ -315,7 +359,7 @@ class CrossDockEnv:
 
     def _assign_doors(self, actions: List[int]):
         """요청(action=1)한 레인을 긴급도 순으로 정렬, 유휴 도어에 차례로 배정."""
-        idle_doors = [d for d in self.doors if not d.is_busy]
+        idle_doors = [d for d in self.doors if not d.is_busy and not d.is_failed]
         if not idle_doors or not self.waiting_trucks:
             return
 
@@ -391,6 +435,62 @@ class CrossDockEnv:
             r_final = self.reward_alpha * r_team + self.reward_beta * r_local
             rewards.append(float(r_final))
         return rewards
+
+    def _apply_disruptions(self):
+        """세 가지 돌발사항을 독립적으로 적용. disruption_log에 기록."""
+        # 1) 도어 고장
+        if self.disruption_door_failure and self.rng.random() < self.disruption_door_failure_prob:
+            healthy = [d for d in self.doors if not d.is_failed]
+            if healthy:
+                door = healthy[int(self.rng.integers(0, len(healthy)))]
+                duration = int(self.rng.integers(
+                    self.disruption_door_failure_dur_min,
+                    self.disruption_door_failure_dur_max + 1,
+                ))
+                interrupted = door.fail(duration)
+                self.disruption_log.append({
+                    "type": "door_failure",
+                    "door_id": door.door_id,
+                    "duration": duration,
+                    "interrupted_truck": bool(interrupted),
+                })
+                self.metrics["disruption_door_failures"] += 1
+                if interrupted:
+                    self.waiting_trucks.insert(0, interrupted)
+                    self.metrics["disruption_interrupted_trucks"] += 1
+
+        # 2) 긴급 트럭 돌발 도착
+        if self.disruption_rush_truck and self.rng.random() < self.disruption_rush_truck_prob:
+            volumes = self.rng.uniform(
+                self.disruption_rush_vol_min,
+                self.disruption_rush_vol_max,
+                size=self.num_lanes,
+            ).round(1)
+            shipments = {k: float(v) for k, v in enumerate(volumes)}
+            rush = Truck(arrival_time=self.t, shipments=shipments, is_rush=True)
+            self.waiting_trucks.insert(0, rush)  # 대기열 맨 앞 삽입
+            self.disruption_log.append({
+                "type": "rush_truck",
+                "total_volume": float(rush.total_volume()),
+            })
+            self.metrics["disruption_rush_trucks"] += 1
+
+        # 3) 아웃바운드 타이머 쇼크
+        if self.disruption_timer_shock:
+            for k, ob in enumerate(self.outbound_trucks):
+                if self.rng.random() < self.disruption_timer_shock_prob:
+                    shock_val = int(self.rng.integers(
+                        self.disruption_timer_shock_min,
+                        self.disruption_timer_shock_max + 1,
+                    ))
+                    if ob.departure_timer > shock_val:
+                        ob.departure_timer = shock_val
+                        self.disruption_log.append({
+                            "type": "timer_shock",
+                            "lane_id": k,
+                            "forced_timer": shock_val,
+                        })
+                        self.metrics["disruption_timer_shocks"] += 1
 
     def _update_metrics(self, depart_info: List, overflow: int):
         for d in depart_info:

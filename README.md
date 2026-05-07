@@ -130,6 +130,7 @@ lcl_gym/
 │
 ├── mip/                          # MILP 최적화 솔버
 │   └── solve_mip.py              # pulp/CBC 기반 매 스텝 MILP 배정 + JSON 저장
+│                                 # (돌발사항 시나리오 포함)
 │
 ├── run_simulation.py             # 베이스라인 벤치마크 실행
 ├── checkpoints/                  # 학습 가중치 및 로그 저장
@@ -160,6 +161,8 @@ python mip/solve_mip.py --seed 42 --output viz/sim_mip.json
 ```
 
 사용 가능한 정책: `greedy` / `fifo` / `random` / `heuristic` / `rl` / `mip`
+
+돌발사항 시나리오별 JSON은 `viz/sim_mip_{baseline|door_failure|rush_truck|timer_shock}.json`에 저장됩니다.
 
 **2단계 — 브라우저에서 뷰어 열기**
 
@@ -317,6 +320,82 @@ python rl/train_rl.py --no-share   # 에이전트별 독립 가중치
 - MILP와 RL(DQN)이 처리량 면에서 Heuristic 대비 **+6.5 CBM (+3.6%)** 우위
 - MILP는 아웃바운드 출발 횟수가 1회 더 많아 더 많은 적재 기회를 확보
 - RL은 탑재율(59.8%)이 가장 높지만 빈 출발(4회)도 가장 많음
+
+---
+
+## 돌발사항 (Disruptions)
+
+MILP가 풀기 어려운 동적 환경을 만들기 위해 세 가지 돌발사항을 구현했습니다.
+각 돌발사항은 독립적으로 활성화할 수 있으며, `enable_disruptions=True`일 때 작동합니다.
+
+### 돌발사항 종류
+
+| 유형 | 설정 키 | 발생 확률 | MIP에 미치는 영향 |
+|------|---------|-----------|-----------------|
+| **도어 고장** `door_failure` | `disruption_door_failure` | 스텝당 1.5% | 처리 용량 감소 → 용량 제약 충돌 / 처리 중 트럭 대기열 복귀 |
+| **긴급 트럭** `rush_truck` | `disruption_rush_truck` | 스텝당 2.5% | 전 레인 고용량 트럭 돌발 삽입 → urgency 가중치 급변 |
+| **타이머 쇼크** `timer_shock` | `disruption_timer_shock` | 레인·스텝당 2.5% | 출발 타이머 강제 단축(2~4스텝) → 목적함수 계수 급변 |
+
+### 돌발사항 파라미터 (DEFAULT_CONFIG)
+
+```yaml
+# 도어 고장
+disruption_door_failure_prob: 0.015
+disruption_door_failure_duration_min: 5   # 고장 지속 스텝
+disruption_door_failure_duration_max: 12
+
+# 긴급 트럭 (전 레인 화물 혼재, 대기열 선두 삽입)
+disruption_rush_truck_prob: 0.025
+disruption_rush_volume_min: 6.0           # 레인당 화물량 (CBM)
+disruption_rush_volume_max: 12.0
+
+# 타이머 쇼크 (아웃바운드 출발 타이머 강제 단축)
+disruption_timer_shock_prob: 0.025
+disruption_timer_shock_min: 2
+disruption_timer_shock_max: 4
+```
+
+### MILP의 돌발 대응 전략
+
+- **도어 고장**: MIP가 `is_failed=True` 도어를 자동으로 제외 → 남은 도어로 재최적화
+- **긴급 트럭**: 긴급 트럭 점수에 **3× 가중치** 부여 → 우선 배정
+- **타이머 쇼크**: 출발 임박 레인 urgency(1 / timer + 1)가 급등 → 자동으로 해당 레인 우선화
+
+### 돌발사항 실험 결과 (seed=42)
+
+#### 처리량 (CBM) — 높을수록 좋음
+
+| 시나리오 | 돌발 횟수 | MILP | RL (DQN) | 차이 (RL−MILP) |
+|---------|---------|-----:|--------:|---------------:|
+| Baseline | 0 | 188.2 | 188.4 | +0.2 |
+| Door Failure | 2 | 210.2 | **219.3** | **+9.1** |
+| Rush Truck | 2 | 253.4 | **269.8** | **+16.4** |
+| Timer Shock | 13~17 | 220.6 | **224.7** | **+4.1** |
+
+#### 평균 탑재율 — 높을수록 좋음
+
+| 시나리오 | MILP | RL (DQN) |
+|---------|-----:|--------:|
+| Baseline | 57.0% | **59.8%** |
+| Door Failure | 58.4% | **63.6%** |
+| Rush Truck | 76.8% | **81.8%** |
+| Timer Shock | 47.4% | 46.8% |
+
+#### 빈 출발 횟수 — 낮을수록 좋음
+
+| 시나리오 | MILP | RL (DQN) |
+|---------|-----:|--------:|
+| Baseline | 3 | 4 |
+| Door Failure | 3 | **2** |
+| Rush Truck | 3 | **1** |
+| Timer Shock | 5 | 6 |
+
+**분석**
+
+- **도어 고장**: MILP는 고장 도어를 즉시 제외하고 재배정하지만 RL이 처리량·탑재율·빈출발 모든 지표에서 우위. 학습된 정책이 도어 수 감소 상황을 암묵적으로 대응하는 것으로 보임.
+- **긴급 트럭**: RL이 처리량 +16.4 CBM, 탑재율 +5%p로 가장 큰 차이. MILP는 3× 가중치로 긴급 트럭을 우선하지만, RL은 door_match 관측값을 통해 자연스럽게 높은 화물 매칭도를 포착함.
+- **타이머 쇼크**: 두 정책 모두 가장 어려워하는 시나리오. 출발 횟수가 31~32회로 급증하고 탑재율이 47% 이하로 추락. MILP는 urgency 재계산으로 빈 출발(5회)을 억제하나, RL은 빈 출발이 6회로 더 많음. **이 시나리오에서만 MILP가 유리**.
+- **전체 경향**: RL이 돌발 환경에서 전반적으로 강인(robust)함. MILP는 타이머 쇼크처럼 목적함수 계수가 격렬하게 변하는 상황에서 상대적으로 취약.
 
 ---
 

@@ -7,6 +7,7 @@ class Truck:
     """인바운드 트럭 — 2~3개 목적지 화물 혼재"""
     arrival_time: int
     shipments: dict  # {lane_id: volume}
+    is_rush: bool = False  # 긴급 트럭 여부 (돌발 발생)
 
     def total_volume(self) -> float:
         return sum(self.shipments.values())
@@ -51,11 +52,20 @@ class OutboundTruck:
 class Door:
     door_id: int
     is_busy: bool = False
+    is_failed: bool = False       # 고장 여부
+    failure_remaining: int = 0    # 고장 잔여 스텝
     remaining_time: int = 0
     assigned_truck: Optional[Truck] = None
     assigned_lane: int = -1
 
     def tick(self):
+        # 고장 중: 카운트다운만 진행, 화물 처리 없음
+        if self.is_failed:
+            self.failure_remaining -= 1
+            if self.failure_remaining <= 0:
+                self.is_failed = False
+                self.failure_remaining = 0
+            return None
         if self.is_busy:
             self.remaining_time -= 1
             if self.remaining_time <= 0:
@@ -72,6 +82,19 @@ class Door:
         self.remaining_time = processing_time
         self.assigned_truck = truck
         self.assigned_lane = lane_id
+
+    def fail(self, duration: int) -> Optional[Truck]:
+        """도어 고장 처리. 처리 중이던 트럭은 대기열로 반환."""
+        self.is_failed = True
+        self.failure_remaining = duration
+        interrupted = None
+        if self.is_busy:
+            interrupted = self.assigned_truck
+            self.is_busy = False
+            self.remaining_time = 0
+            self.assigned_truck = None
+            self.assigned_lane = -1
+        return interrupted
 
 
 @dataclass

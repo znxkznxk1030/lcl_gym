@@ -60,7 +60,8 @@ def solve_assignment(
         assigned_truck_indices: 각 유휴 도어에 배정할 waiting_trucks 인덱스 리스트.
                                 비어있으면 배정 없음.
     """
-    idle_door_indices = [i for i, d in enumerate(doors) if not d.is_busy]
+    # 유휴 + 정상(비고장) 도어만 대상
+    idle_door_indices = [i for i, d in enumerate(doors) if not d.is_busy and not d.is_failed]
     if not idle_door_indices or not waiting_trucks:
         return []
 
@@ -69,13 +70,16 @@ def solve_assignment(
     n_t = len(trucks)
     n_d = len(idle_door_indices)
 
-    # urgency 가중 점수 계산
+    # urgency 가중 점수 계산 (긴급 트럭은 3배 가중)
+    RUSH_MULTIPLIER = 3.0
     scores = []
     for truck in trucks:
         s = sum(
             vol / (outbound_trucks[lane_id].departure_timer + 1)
             for lane_id, vol in truck.shipments.items()
         )
+        if getattr(truck, "is_rush", False):
+            s *= RUSH_MULTIPLIER
         scores.append(s)
 
     # ── MILP 정의 ──
@@ -149,6 +153,8 @@ def capture_frame(env: CrossDockEnv, actions: list, rewards: list) -> dict:
             {
                 "door_id": d.door_id,
                 "is_busy": bool(d.is_busy),
+                "is_failed": bool(d.is_failed),
+                "failure_remaining": int(d.failure_remaining),
                 "remaining_time": int(d.remaining_time),
                 "assigned_lane": int(d.assigned_lane),
                 "assigned_truck_volume": (
@@ -175,6 +181,7 @@ def capture_frame(env: CrossDockEnv, actions: list, rewards: list) -> dict:
         ],
         "actions": list(actions),
         "rewards": [float(r) for r in rewards],
+        "disruptions": list(env.disruption_log),
         "metrics": {
             k: float(v) if isinstance(v, (int, float)) else v
             for k, v in env.metrics.items()
@@ -182,7 +189,11 @@ def capture_frame(env: CrossDockEnv, actions: list, rewards: list) -> dict:
     }
 
 
-def run_episode_mip(seed: int = 42, verbose: bool = True) -> tuple[list[dict], dict, dict]:
+def run_episode_mip(
+    seed: int = 42,
+    verbose: bool = True,
+    disruption_config: dict = None,
+) -> tuple[list[dict], dict, dict]:
     """
     MILP 정책으로 에피소드 실행.
 
@@ -191,7 +202,7 @@ def run_episode_mip(seed: int = 42, verbose: bool = True) -> tuple[list[dict], d
       2. MILP 결과로 waiting_trucks 순서 재정렬 (env는 항상 큐 앞에서 FIFO 배정)
       3. 배정된 트럭이 있는 레인은 action=1 (요청)
     """
-    env = CrossDockEnv(seed=seed)
+    env = CrossDockEnv(seed=seed, config=disruption_config or {})
     obs = env.reset()
 
     initial_actions = [0] * env.num_lanes
@@ -271,6 +282,10 @@ def run_episode_mip(seed: int = 42, verbose: bool = True) -> tuple[list[dict], d
         "mip_calls": mip_call_count,
         "total_mip_time_sec": round(total_mip_time, 4),
         "avg_mip_time_ms": round(total_mip_time / max(mip_call_count, 1) * 1000, 2),
+        "disruption_door_failures": env.metrics.get("disruption_door_failures", 0),
+        "disruption_interrupted_trucks": env.metrics.get("disruption_interrupted_trucks", 0),
+        "disruption_rush_trucks": env.metrics.get("disruption_rush_trucks", 0),
+        "disruption_timer_shocks": env.metrics.get("disruption_timer_shocks", 0),
     }
     return frames, env.metrics, solver_stats
 

@@ -85,6 +85,7 @@ def capture_frame(env: CrossDockEnv, actions: list[int], rewards: list[float]) -
         ],
         "actions": list(actions),
         "rewards": [float(r) for r in rewards],
+        "disruptions": list(env.disruption_log),
         "metrics": {
             k: float(v) if isinstance(v, (int, float)) else v
             for k, v in env.metrics.items()
