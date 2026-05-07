@@ -215,6 +215,13 @@ def _parse_args():
             kwargs["env_config"]["arrival_count_min"] = round(50 * d / 3)
             kwargs["env_config"]["arrival_count_max"] = round(70 * d / 3)
         if a == "--no-share":                         kwargs["shared_weights"] = False
+        if a == "--disruptions":
+            kwargs.setdefault("env_config", {}).update({
+                "enable_disruptions": True,
+                "disruption_door_failure": True,
+                "disruption_rush_truck": True,
+                "disruption_timer_shock": True,
+            })
     return kwargs
 
 
