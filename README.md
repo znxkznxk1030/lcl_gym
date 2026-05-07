@@ -128,6 +128,9 @@ lcl_gym/
 │   ├── index.html                # Three.js 기반 3D 뷰어
 │   └── simulation_data.json      # 기본 출력 JSON (export 결과)
 │
+├── mip/                          # MILP 최적화 솔버
+│   └── solve_mip.py              # pulp/CBC 기반 매 스텝 MILP 배정 + JSON 저장
+│
 ├── run_simulation.py             # 베이스라인 벤치마크 실행
 ├── checkpoints/                  # 학습 가중치 및 로그 저장
 └── README.md
@@ -151,9 +154,12 @@ python viz/export_simulation.py
 python viz/export_simulation.py --policy heuristic --seed 7
 python viz/export_simulation.py --policy rl
 python viz/export_simulation.py --policy random --output viz/sim_random.json
+
+# MILP 최적화 정책 (pulp 필요: pip install pulp)
+python mip/solve_mip.py --seed 42 --output viz/sim_mip.json
 ```
 
-사용 가능한 정책: `greedy` / `fifo` / `random` / `heuristic` / `rl`
+사용 가능한 정책: `greedy` / `fifo` / `random` / `heuristic` / `rl` / `mip`
 
 **2단계 — 브라우저에서 뷰어 열기**
 
@@ -289,6 +295,28 @@ python rl/train_rl.py
 python rl/train_rl.py --episodes 2000 --lr 5e-4
 python rl/train_rl.py --no-share   # 에이전트별 독립 가중치
 ```
+
+---
+
+## 정책 비교 결과 (단일 에피소드, seed=42)
+
+### MILP 포함 전 정책 비교
+
+| 정책 | 처리량 (CBM) | 평균 탑재율 | 오버플로우 | 빈 출발 | 출발 횟수 |
+|---|---:|---:|---:|---:|---:|
+| FIFO | 181.7 | 57.7% | 0 | 3 | 21 |
+| Greedy | 181.7 | 57.7% | 0 | 3 | 21 |
+| Heuristic | 181.7 | 57.7% | 0 | 3 | 21 |
+| RL (DQN) | 188.4 | 59.8% | 0 | 4 | 21 |
+| **MILP (CBC)** | **188.2** | **57.0%** | **0** | **3** | **22** |
+
+> **MILP 공식화**: 매 스텝 `maximize Σ x_{j,i}·score_j` (score = Σ_k v_{j,k}/(departure_timer_k+1)),
+> 트럭/도어 단일 배정 + 버퍼 용량 제약. 풀이기: pulp/CBC, 평균 ~91ms/호출.
+
+**해석**
+- MILP와 RL(DQN)이 처리량 면에서 Heuristic 대비 **+6.5 CBM (+3.6%)** 우위
+- MILP는 아웃바운드 출발 횟수가 1회 더 많아 더 많은 적재 기회를 확보
+- RL은 탑재율(59.8%)이 가장 높지만 빈 출발(4회)도 가장 많음
 
 ---
 

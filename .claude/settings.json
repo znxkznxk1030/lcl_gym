@@ -10,7 +10,25 @@
       "Bash(python rl/evaluate_rl.py --episodes 5)",
       "Bash(python run_simulation.py --verbose --steps 8)",
       "Bash(python viz/export_simulation.py --policy heuristic --seed 42 --output viz/simulation_data.json)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python rl/train_rl.py --episodes 2000)",
+      "Bash(python viz/export_simulation.py --policy rl)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python -c \"import pulp; print\\('pulp:', pulp.__version__\\)\")",
+      "Bash(python -c \"import scipy; print\\('scipy:', scipy.__version__\\)\")",
+      "Bash(pip install *)",
+      "Bash(python -c \"import pulp; print\\('pulp installed:', pulp.__version__\\)\")",
+      "Bash(python mip/solve_mip.py)",
+      "Bash(python viz/export_simulation.py --policy heuristic --seed 42 --output viz/sim_heuristic.json)",
+      "Bash(python viz/export_simulation.py --policy greedy --seed 42 --output viz/sim_greedy.json)",
+      "Bash(python viz/export_simulation.py --policy fifo --seed 42 --output viz/sim_fifo.json)"
+    ],
+    "additionalDirectories": [
+      "/Users/yskim/Desktop/05. 물류 ai/lcl_gym/checkpoints"
     ]
   }
 }
