@@ -44,6 +44,7 @@ def capture_frame(env: CrossDockEnv, actions: list[int], rewards: list[float]) -
                 "arrival_time": int(t.arrival_time),
                 "shipments": {str(k): int(v) for k, v in t.shipments.items()},
                 "total_volume": int(t.total_volume()),
+                "is_rush": bool(getattr(t, "is_rush", False)),
             }
             for t in env.waiting_trucks
         ],

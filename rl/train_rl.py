@@ -74,11 +74,12 @@ def train(
     seed: int = 42,
     log_interval: int = 100,
     save_dir: str = "checkpoints",
+    env_config: dict = None,
 ) -> dict:
 
     os.makedirs(save_dir, exist_ok=True)
 
-    config = {**DEFAULT_CONFIG}
+    config = {**DEFAULT_CONFIG, **(env_config or {})}
     env = CrossDockEnv(config, seed=seed)
     n_agents  = env.num_lanes
     obs_size  = env.obs_size
@@ -203,10 +204,17 @@ def _parse_args():
     args = sys.argv[1:]
     kwargs = {"num_episodes": 1000, "shared_weights": True, "lr": 1e-3, "seed": 42}
     for i, a in enumerate(args):
-        if a == "--episodes" and i + 1 < len(args): kwargs["num_episodes"]   = int(args[i+1])
-        if a == "--lr"       and i + 1 < len(args): kwargs["lr"]             = float(args[i+1])
-        if a == "--seed"     and i + 1 < len(args): kwargs["seed"]           = int(args[i+1])
-        if a == "--no-share":                        kwargs["shared_weights"] = False
+        if a == "--episodes"  and i + 1 < len(args): kwargs["num_episodes"]   = int(args[i+1])
+        if a == "--lr"        and i + 1 < len(args): kwargs["lr"]             = float(args[i+1])
+        if a == "--seed"      and i + 1 < len(args): kwargs["seed"]           = int(args[i+1])
+        if a == "--save-dir"  and i + 1 < len(args): kwargs["save_dir"]       = args[i+1]
+        if a == "--doors"     and i + 1 < len(args):
+            d = int(args[i+1])
+            kwargs.setdefault("env_config", {})["num_inbound_doors"] = d
+            # 트럭 수 비례 증가
+            kwargs["env_config"]["arrival_count_min"] = round(50 * d / 3)
+            kwargs["env_config"]["arrival_count_max"] = round(70 * d / 3)
+        if a == "--no-share":                         kwargs["shared_weights"] = False
     return kwargs
 
 

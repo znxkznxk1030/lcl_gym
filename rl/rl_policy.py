@@ -19,23 +19,25 @@ from rl.networks import NumpyMLP
 #   0: lane_queue, 1: congestion, 2: outbound_fill_rate,
 #   3: outbound_departure_in, 4: buffer_remaining,
 #   5: idle_doors, 6: waiting_trucks, 7: scheduled_trucks, 8..: door_matches
-_OBS_SCALE = np.array([
-    50.0,   # 0: lane_queue              / 50
-    1.0,    # 1: congestion              (이미 0~1)
-    1.0,    # 2: outbound_fill_rate      (이미 0~1)
-    28.0,   # 3: outbound_departure_in   / dispatch_interval_max
-    150.0,  # 4: buffer_remaining        / buffer_capacity
-    3.0,    # 5: idle_doors              / num_doors
-    15.0,   # 6: waiting_trucks          / soft max
-    50.0,   # 7: scheduled_trucks        / soft max
-    1.0,    # 8: door_match_0            (이미 0~1)
-    1.0,    # 9: door_match_1
-    1.0,    # 10: door_match_2
+_OBS_SCALE_BASE = np.array([
+    50.0,   # 0: lane_queue
+    1.0,    # 1: congestion
+    1.0,    # 2: outbound_fill_rate
+    28.0,   # 3: outbound_departure_in
+    150.0,  # 4: buffer_remaining
+    3.0,    # 5: idle_doors
+    100.0,  # 6: waiting_trucks  (8도어 환경 최대 ~150대)
+    200.0,  # 7: scheduled_trucks
 ], dtype=np.float32)
 
 
 def normalize_obs(obs: np.ndarray) -> np.ndarray:
-    return obs / (_OBS_SCALE[:len(obs)] + 1e-8)
+    n_door_matches = len(obs) - len(_OBS_SCALE_BASE)
+    scale = np.concatenate([
+        _OBS_SCALE_BASE,
+        np.ones(max(n_door_matches, 0), dtype=np.float32),  # door_match 이미 0~1
+    ])
+    return obs / (scale + 1e-8)
 
 
 class QLearningPolicy(BasePolicy):
