@@ -886,40 +886,39 @@
     function drawBuffer(frame) {
       const cap = Number(frame.buffer_capacity || 1);
       const fill = clamp(Number(frame.buffer || 0) / cap, 0, 1);
-      const shellMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.45,
-        transparent: true,
-        opacity: 0.38
-      });
-      const shellMesh = new THREE.Mesh(new THREE.BoxGeometry(2.05, 2.8, 4.6), shellMat);
+      const shellMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(2.05, 2.8, 4.6),
+        new THREE.MeshStandardMaterial({ color: 0x0f766e, roughness: 0.38, transparent: true, opacity: 0.18 })
+      );
       shellMesh.position.set(-11.1, 1.42, Z.buffer + 1.1);
       shellMesh.castShadow = true;
       shellMesh.receiveShadow = true;
       dynamic.add(shellMesh);
 
-      const levelColor = fill > 0.92 ? 0xb91c1c : fill > 0.72 ? 0xd97706 : 0x0f766e;
+      const BUFFER_MAX_H = 2.8;
+      const BUFFER_BASE  = 0.07;
+      const BX = -11.1, BZ = Z.buffer + 1.1;
+
+      const fillH     = Math.max(0.04, BUFFER_MAX_H * fill);
+      const fillColor = fill > 0.92 ? 0xb91c1c : fill > 0.72 ? 0xd97706 : 0x0f766e;
       const fillMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.82, Math.max(0.05, fill * 2.45), 4.3),
-        new THREE.MeshStandardMaterial({ color: levelColor, roughness: 0.52, transparent: true, opacity: 0.78 })
+        new THREE.BoxGeometry(1.82, fillH, 4.3),
+        new THREE.MeshStandardMaterial({ color: fillColor, roughness: 0.5, transparent: true, opacity: 0.82 })
       );
-      fillMesh.position.set(-11.1, 0.18 + (fill * 2.45) / 2, Z.buffer + 1.1);
+      fillMesh.position.set(BX, BUFFER_BASE + fillH / 2, BZ);
       fillMesh.castShadow = true;
       dynamic.add(fillMesh);
-      addDynamicLabel(`${round(frame.buffer)}/${round(cap)}`, -11.1, 3.15, Z.buffer + 1.1, 0x1d2329, 0xfffdf8, 0.82);
 
-      frame.lanes.forEach((lane, i) => {
-        const blocks = Math.min(18, Math.ceil((Number(lane.queue_volume) || 0) / 4));
-        for (let j = 0; j < blocks; j += 1) {
-          const cube = createCrate(laneColors[i], 0.3);
-          cube.position.set(
-            -9.35 + (j % 3) * 0.38,
-            0.23 + Math.floor(j / 3) * 0.34,
-            Z.buffer - 1.0 + i * 0.5
-          );
-          dynamic.add(cube);
-        }
-      });
+      if (fill > 0.01) {
+        const waterLine = new THREE.Mesh(
+          new THREE.BoxGeometry(1.82, 0.045, 4.3),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, transparent: true, opacity: 0.55 })
+        );
+        waterLine.position.set(BX, BUFFER_BASE + fillH, BZ);
+        dynamic.add(waterLine);
+      }
+
+      addDynamicLabel(`${round(frame.buffer)}/${round(cap)}`, BX, BUFFER_BASE + BUFFER_MAX_H + 0.52, BZ, 0x1d2329, 0xfffdf8, 0.82);
     }
 
     function drawScheduledTrucks(frame) {
@@ -1058,48 +1057,80 @@
         const soonest = timer === minTimer;
         const shocked = shockedLanes.has(i);
 
-        const height = Math.max(0.06, 3.1 * congestion);
-        const queueMat = new THREE.MeshStandardMaterial({
-          color: congestion > 0.92 ? 0xb91c1c : color,
-          roughness: 0.48,
-          transparent: true,
-          opacity: 0.88
-        });
-        const queueColumn = new THREE.Mesh(new THREE.BoxGeometry(0.92, height, 0.92), queueMat);
-        queueColumn.position.set(x, 0.12 + height / 2, Z.lanes);
-        queueColumn.castShadow = true;
-        dynamic.add(queueColumn);
+        const QUEUE_MAX_H = 3.1;
+        const QUEUE_BASE  = 0.12;
 
-        const blocks = Math.min(18, Math.ceil(queue / 3));
-        for (let j = 0; j < blocks; j += 1) {
-          const cube = createCrate(color, 0.26);
-          cube.position.set(
-            x - 0.76 + (j % 3) * 0.34,
-            0.23 + Math.floor(j / 3) * 0.3,
-            Z.lanes + 0.82
+        // 투명 컨테이너 외벽
+        const queueShell = new THREE.Mesh(
+          new THREE.BoxGeometry(2.25, QUEUE_MAX_H, 2.9),
+          new THREE.MeshStandardMaterial({ color, roughness: 0.38, transparent: true, opacity: 0.18 })
+        );
+        queueShell.position.set(x, QUEUE_BASE + QUEUE_MAX_H / 2, Z.lanes);
+        queueShell.castShadow = true;
+        dynamic.add(queueShell);
+
+        // 수위 fill
+        const queueFillH     = Math.max(0.04, QUEUE_MAX_H * congestion);
+        const queueFillColor = congestion > 0.85 ? 0xb91c1c : congestion > 0.45 ? 0xd97706 : color;
+        const queueFill = new THREE.Mesh(
+          new THREE.BoxGeometry(2.02, queueFillH, 2.67),
+          new THREE.MeshStandardMaterial({ color: queueFillColor, roughness: 0.5, transparent: true, opacity: 0.82 })
+        );
+        queueFill.position.set(x, QUEUE_BASE + queueFillH / 2, Z.lanes);
+        queueFill.castShadow = true;
+        dynamic.add(queueFill);
+
+        // 수위 상단 강조선
+        if (congestion > 0.01) {
+          const waterLine = new THREE.Mesh(
+            new THREE.BoxGeometry(2.02, 0.045, 2.67),
+            new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, transparent: true, opacity: 0.55 })
           );
-          dynamic.add(cube);
+          waterLine.position.set(x, QUEUE_BASE + queueFillH, Z.lanes);
+          dynamic.add(waterLine);
         }
 
-        addDynamicLabel(`Q ${round(queue)}`, x, Math.max(0.9, height + 0.6), Z.lanes - 0.05, 0x1d2329, 0xfffdf8, 0.62);
+        addDynamicLabel(`Q ${round(queue)}`, x, QUEUE_BASE + QUEUE_MAX_H + 0.52, Z.lanes - 0.05, 0x1d2329, 0xfffdf8, 0.62);
 
         drawOutboundTruck(i, x, Z.outbound, color, fillRate, loaded, capacity, timer, soonest, shocked);
       });
     }
 
     function drawOutboundTruck(i, x, z, color, fillRate, loaded, capacity, timer, soonest = false, shocked = false) {
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.48,
-        transparent: true,
-        opacity: 0.42 + fillRate * 0.42
-      });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.72, 2.75), bodyMat);
-      body.position.set(x, 0.48, z);
-      body.castShadow = true;
-      dynamic.add(body);
+      const CARGO_H    = 1.85;  // 컨테이너 내부 높이
+      const CARGO_BASE = 0.12;  // 바닥 y
 
-      // 곧 출발할 트럭: 헤드라이트 링 강조
+      // ── 투명 컨테이너 외벽 ──
+      const shell = new THREE.Mesh(
+        new THREE.BoxGeometry(2.15, CARGO_H, 2.75),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.38, transparent: true, opacity: 0.18 })
+      );
+      shell.position.set(x, CARGO_BASE + CARGO_H / 2, z);
+      shell.castShadow = true;
+      dynamic.add(shell);
+
+      // ── 수위 fill ──
+      const fillH     = Math.max(0.04, CARGO_H * fillRate);
+      const fillColor = fillRate > 0.85 ? 0x15803d : fillRate > 0.45 ? 0xd97706 : 0x2563eb;
+      const fill = new THREE.Mesh(
+        new THREE.BoxGeometry(1.92, fillH, 2.52),
+        new THREE.MeshStandardMaterial({ color: fillColor, roughness: 0.5, transparent: true, opacity: 0.82 })
+      );
+      fill.position.set(x, CARGO_BASE + fillH / 2, z);
+      fill.castShadow = true;
+      dynamic.add(fill);
+
+      // ── 수위 상단 강조선 ──
+      if (fillRate > 0.01) {
+        const waterLine = new THREE.Mesh(
+          new THREE.BoxGeometry(1.92, 0.045, 2.52),
+          new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, transparent: true, opacity: 0.55 })
+        );
+        waterLine.position.set(x, CARGO_BASE + fillH, z);
+        dynamic.add(waterLine);
+      }
+
+      // ── 곧 출발할 트럭: 링 강조 ──
       if (soonest) {
         const ring = new THREE.Mesh(
           new THREE.TorusGeometry(1.28, 0.07, 8, 32),
@@ -1110,7 +1141,7 @@
         dynamic.add(ring);
       }
 
-      // 타이머 쇼크: 빨간 경고 링 + SHOCK 라벨
+      // ── 타이머 쇼크: 빨간 경고 링 + SHOCK 라벨 ──
       if (shocked) {
         const shockRing = new THREE.Mesh(
           new THREE.TorusGeometry(1.38, 0.1, 8, 32),
@@ -1122,6 +1153,7 @@
         addDynamicLabel("SHOCK!", x, 1.9, z + 1.55, 0xffffff, 0xdc2626, 0.72);
       }
 
+      // ── 캡 ──
       const cab = new THREE.Mesh(
         new THREE.BoxGeometry(1.55, 0.78, 0.55),
         new THREE.MeshStandardMaterial({ color: 0x3c4146, roughness: 0.55 })
@@ -1130,36 +1162,29 @@
       cab.castShadow = true;
       dynamic.add(cab);
 
-      const blocks = Math.min(15, Math.ceil((Number(loaded) || 0) / 3.5));
-      for (let j = 0; j < blocks; j += 1) {
-        const cube = createCrate(color, 0.25);
-        cube.position.set(x - 0.62 + (j % 3) * 0.44, 0.95 + Math.floor(j / 9) * 0.32, z - 0.88 + Math.floor((j % 9) / 3) * 0.52);
-        dynamic.add(cube);
-      }
-
-      // 타이머 바: dispatch_interval_max 기준으로 정규화
+      // ── 타이머 바 ──
       const timerRatio = clamp(timer / state.maxDispatchInterval, 0, 1);
       const timerColor = timerRatio < 0.25 ? 0xb91c1c : timerRatio < 0.55 ? 0xd97706 : 0x15803d;
       const timerBack = new THREE.Mesh(
         new THREE.BoxGeometry(2.12, 0.09, 0.08),
         new THREE.MeshStandardMaterial({ color: 0x2f3438, roughness: 0.6 })
       );
-      timerBack.position.set(x, 1.15, z - 1.58);
+      timerBack.position.set(x, CARGO_BASE + CARGO_H + 0.18, z - 1.58);
       dynamic.add(timerBack);
       const timerBar = new THREE.Mesh(
         new THREE.BoxGeometry(Math.max(0.04, 2.12 * timerRatio), 0.1, 0.09),
         new THREE.MeshStandardMaterial({ color: timerColor, roughness: 0.45 })
       );
-      timerBar.position.set(x - 1.06 + (2.12 * timerRatio) / 2, 1.16, z - 1.58);
+      timerBar.position.set(x - 1.06 + (2.12 * timerRatio) / 2, CARGO_BASE + CARGO_H + 0.19, z - 1.58);
       dynamic.add(timerBar);
 
-      // 적재율 — 채워진 비율과 CBM 수치를 함께 표시
+      // ── 라벨 ──
       const fillLabel = fillRate > 0.01
         ? `${Math.round(fillRate * 100)}% (${Math.round(loaded)}cbm)`
         : `empty`;
-      const fillFg = fillRate > 0.85 ? 0x15803d : fillRate > 0.4 ? 0x92400e : 0x6b7280;
-      addDynamicLabel(fillLabel, x, 1.72, z + 0.02, fillFg, 0xfffdf8, 0.58);
-      addDynamicLabel(`T-${timer}`, x, 1.46, z - 1.63, 0x1d2329, soonest ? 0xfef3c7 : 0xfffdf8, soonest ? 0.55 : 0.45);
+      const fillFg = fillRate > 0.85 ? 0x15803d : fillRate > 0.45 ? 0x92400e : 0x6b7280;
+      addDynamicLabel(fillLabel, x, CARGO_BASE + CARGO_H + 0.52, z, fillFg, 0xfffdf8, 0.58);
+      addDynamicLabel(`T-${timer}`, x, CARGO_BASE + CARGO_H + 0.26, z - 1.63, 0x1d2329, soonest ? 0xfef3c7 : 0xfffdf8, soonest ? 0.55 : 0.45);
     }
 
     function drawActions(frame) {

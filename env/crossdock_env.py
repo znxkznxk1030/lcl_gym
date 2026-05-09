@@ -341,20 +341,34 @@ class CrossDockEnv:
         return released
 
     def _process_released(self, trucks: List[Truck]) -> int:
-        """인바운드 트럭 화물: 버퍼 → 레인 큐"""
+        """인바운드 트럭 화물: 버퍼 → 레인 큐
+        버퍼가 꽉 찬 경우 트럭을 소실시키지 않고 waiting_trucks 맨 앞으로 반환."""
         overflow = 0
+        returned: List[Truck] = []
+
         for truck in trucks:
+            if self.buffer_capacity - self.buffer <= 0:
+                # 버퍼 여유 없음 → 트럭 반환, 화물 소실 없음
+                returned.append(truck)
+                continue
+
             for lane_id, volume in truck.shipments.items():
                 space = self.buffer_capacity - self.buffer
-                if space <= 0:
-                    overflow += 1
-                    continue
                 actual = min(volume, space)
-                self.buffer += actual
-                self.lanes[lane_id].add_volume(actual)
-                dwell = self.t - truck.arrival_time
-                self.metrics["dwell_time_sum"] += dwell
-                self.metrics["dwell_count"] += 1
+                if actual > 0:
+                    self.buffer += actual
+                    self.lanes[lane_id].add_volume(actual)
+                    dwell = self.t - truck.arrival_time
+                    self.metrics["dwell_time_sum"] += dwell
+                    self.metrics["dwell_count"] += 1
+                if actual < volume:
+                    # 부분적으로만 처리된 경우 나머지 화물 소실
+                    overflow += 1
+
+        # 반환 트럭을 큐 앞에 삽입 (도착 순서 유지)
+        for truck in reversed(returned):
+            self.waiting_trucks.insert(0, truck)
+
         return overflow
 
     def _assign_doors(self, actions: List[int]):
