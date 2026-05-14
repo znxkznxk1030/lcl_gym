@@ -302,10 +302,12 @@ class CrossDockEnv:
             dest_lanes = self.rng.choice(
                 self.num_lanes, size=min(n_dest, self.num_lanes), replace=False
             )
-            volumes = self.rng.uniform(
-                self.inbound_vol_min, self.inbound_vol_max, size=len(dest_lanes)
-            ).round(1)
-            shipments = {int(k): float(v) for k, v in zip(dest_lanes, volumes)}
+            volumes = self.rng.integers(
+                max(1, int(self.inbound_vol_min)),
+                int(self.inbound_vol_max) + 1,
+                size=len(dest_lanes),
+            )
+            shipments = {int(k): int(v) for k, v in zip(dest_lanes, volumes)}
             schedule.append(Truck(arrival_time=t, shipments=shipments))
         return schedule
 
@@ -325,10 +327,12 @@ class CrossDockEnv:
             dest_lanes = self.rng.choice(
                 self.num_lanes, size=min(n_dest, self.num_lanes), replace=False
             )
-            volumes = self.rng.uniform(
-                self.inbound_vol_min, self.inbound_vol_max, size=len(dest_lanes)
-            ).round(1)
-            shipments = {int(k): float(v) for k, v in zip(dest_lanes, volumes)}
+            volumes = self.rng.integers(
+                max(1, int(self.inbound_vol_min)),
+                int(self.inbound_vol_max) + 1,
+                size=len(dest_lanes),
+            )
+            shipments = {int(k): int(v) for k, v in zip(dest_lanes, volumes)}
             return [Truck(arrival_time=self.t, shipments=shipments)]
         return []
 
@@ -342,30 +346,41 @@ class CrossDockEnv:
 
     def _process_released(self, trucks: List[Truck]) -> int:
         """인바운드 트럭 화물: 버퍼 → 레인 큐
-        버퍼가 꽉 찬 경우 트럭을 소실시키지 않고 waiting_trucks 맨 앞으로 반환."""
+        - 버퍼 완전 포화: 트럭 전체 반환
+        - 버퍼 부분 여유: 들어가는 만큼 적재, 나머지 화물만 담은 부분 트럭을 반환
+          → 화물 소실 없음 (보존 보장)"""
         overflow = 0
         returned: List[Truck] = []
 
         for truck in trucks:
             if self.buffer_capacity - self.buffer <= 0:
-                # 버퍼 여유 없음 → 트럭 반환, 화물 소실 없음
                 returned.append(truck)
                 continue
 
+            leftover: dict = {}
             for lane_id, volume in truck.shipments.items():
-                space = self.buffer_capacity - self.buffer
-                actual = min(volume, space)
+                space  = int(self.buffer_capacity - self.buffer)  # floor → 항상 정수
+                actual = min(int(volume), space)                   # 화물량도 정수 보장
                 if actual > 0:
                     self.buffer += actual
                     self.lanes[lane_id].add_volume(actual)
                     dwell = self.t - truck.arrival_time
                     self.metrics["dwell_time_sum"] += dwell
                     self.metrics["dwell_count"] += 1
-                if actual < volume:
-                    # 부분적으로만 처리된 경우 나머지 화물 소실
-                    overflow += 1
+                remaining = volume - actual
+                if remaining > 0:
+                    leftover[lane_id] = remaining
 
-        # 반환 트럭을 큐 앞에 삽입 (도착 순서 유지)
+            if leftover:
+                # 나머지 화물을 부분 트럭으로 만들어 큐 앞에 반환
+                partial = Truck(
+                    arrival_time=truck.arrival_time,
+                    shipments=leftover,
+                    is_rush=truck.is_rush,
+                )
+                returned.append(partial)
+                overflow += 1
+
         for truck in reversed(returned):
             self.waiting_trucks.insert(0, truck)
 
@@ -397,7 +412,7 @@ class CrossDockEnv:
         for k, lane in enumerate(self.lanes):
             ob = self.outbound_trucks[k]
             if ob.space_remaining > 0 and lane.queue_volume > 0:
-                transferable = min(lane.queue_volume, ob.space_remaining)
+                transferable = int(min(lane.queue_volume, ob.space_remaining))  # 정수 보장
                 ob.load(transferable)
                 lane.take_volume(transferable)
                 self.buffer = max(self.buffer - transferable, 0.0)

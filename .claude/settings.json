@@ -28,7 +28,19 @@
       "Bash(python viz/export_simulation.py --policy fifo --seed 42 --output viz/sim_fifo.json)",
       "Bash(python rl/train_rl.py --episodes 2000 --doors 8 --save-dir checkpoints_8door --lr 1e-3)",
       "Bash(python rl/train_rl.py --episodes 2000 --doors 8 --disruptions --save-dir checkpoints_8door_disruption --lr 1e-3)",
-      "Bash(kill %1)"
+      "Bash(kill %1)",
+      "Bash(open \"/Users/yskim/Desktop/05. 물류 ai/lcl_gym/viz/index2d.html\")",
+      "Bash(python3 -)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import pulp; print\\('ok'\\)\")",
+      "Read(//Users/yskim/**)",
+      "Bash(python3 -m pip install pulp --user -q)",
+      "Bash(python3 -m pip install pulp --break-system-packages -q)",
+      "Bash(python3 viz/export_simulation.py --policy greedy --seed 42 --output viz/sim_greedy.json)",
+      "Bash(python3 viz/export_simulation.py --policy heuristic --seed 42 --output viz/sim_heuristic.json)",
+      "Bash(python3 mip/solve_mip.py --seed 42 --output viz/sim_mip.json)",
+      "Bash(python3 viz/export_simulation.py --policy rl --seed 42 --output viz/sim_rl.json)",
+      "Bash(grep \"\\\\.py$\")"
     ],
     "additionalDirectories": [
       "/Users/yskim/Desktop/05. 물류 ai/lcl_gym/checkpoints"

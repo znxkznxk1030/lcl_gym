@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cross-Dock 2D Viewer</title>
+  <style>
+    :root {
+      --bg:#f4f1ea; --ink:#1d2329; --muted:#67717d; --line:#d5d0c4;
+      --panel:#fffdf8; --accent:#0f766e; --warn:#c2410c;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html,body { width:100%; height:100%; overflow:hidden; background:var(--bg); color:var(--ink); }
+    body { display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; }
+
+    .topbar {
+      display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center;
+      padding:11px 18px 9px; border-bottom:1px solid var(--line);
+      background:rgba(255,253,248,.96); z-index:3;
+    }
+    h1 { font-size:16px; font-weight:760; }
+    .subline { display:flex; gap:12px; margin-top:3px; font-size:12px; color:var(--muted); }
+    .ctrl { display:flex; gap:7px; align-items:center; }
+    .file-label, select, .icon-btn {
+      height:32px; border:1px solid var(--line); border-radius:6px;
+      background:#fffaf0; color:var(--ink); font:inherit; cursor:pointer;
+      display:inline-flex; align-items:center; padding:0 10px; font-size:12px;
+    }
+    .icon-btn { width:32px; padding:0; justify-content:center; }
+    .icon-btn:hover { background:#fff0d0; }
+    .icon-btn svg { width:15px; height:15px; fill:currentColor; }
+    input[type="file"] { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+
+    .mbar {
+      display:flex; gap:5px; flex-wrap:wrap; padding:7px 18px;
+      border-bottom:1px solid var(--line); background:rgba(255,253,248,.94);
+    }
+    .m { display:flex; flex-direction:column; gap:1px; min-width:70px; padding:4px 9px;
+         border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+    .m b { font-size:10px; color:var(--muted); font-weight:640; }
+    .m span { font-size:14px; font-weight:780; }
+    .m.warn span { color:var(--warn); }
+
+    .vp { position:relative; min-height:0; overflow:hidden; }
+    canvas { display:block; }
+
+    .timeline {
+      display:grid; grid-template-columns:auto 1fr auto auto; gap:12px; align-items:center;
+      padding:9px 18px 11px; border-top:1px solid var(--line); background:rgba(255,253,248,.96);
+    }
+    .pg { display:flex; gap:6px; }
+    .rw { display:grid; gap:2px; }
+    input[type="range"] { width:100%; accent-color:var(--accent); }
+    .ticks { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); }
+    .tr { min-width:76px; text-align:right; font-size:13px; font-weight:760; }
+
+    .toast {
+      position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
+      max-width:480px; padding:9px 14px; border-radius:8px;
+      border:1px solid var(--line); background:rgba(255,253,248,.97);
+      font-size:12px; z-index:10; display:none;
+      box-shadow:0 4px 16px rgba(33,35,38,.12);
+    }
+    .vp.drop .toast { display:block; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>Cross-Dock 2D Viewer</h1>
+    <div class="subline">
+      <span id="mPolicy">policy: -</span><span id="mSeed">seed: -</span>
+      <span id="mSteps">steps: -</span><span id="mSrc">source: -</span>
+    </div>
+  </div>
+  <div class="ctrl">
+    <select id="srcSel">
+      <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
+      <option value="sim_mip_8door_all.json">MIP 8door all disruptions</option>
+      <option value="sim_rl_8door_disruption_baseline.json">RL 8door baseline</option>
+      <option value="sim_rl_8door_disruption_all.json">RL 8door all disruptions</option>
+      <option value="sim_heuristic.json">Heuristic</option>
+    </select>
+    <label class="file-label">JSON<input id="fileIn" type="file" accept=".json" /></label>
+    <button id="btnReset" class="icon-btn" title="처음으로">
+      <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6.5 12 11V8c2.76 0 5 2.24 5 5 0 .86-.22 1.67-.6 2.38l2.19 1.2A7.45 7.45 0 0 0 19.5 13 7.5 7.5 0 0 0 12 5Zm-5.6 3.62A7.45 7.45 0 0 0 4.5 13 7.5 7.5 0 0 0 12 20.5V23l5-4.5-5-4.5v3a5 5 0 0 1-5-5c0-1.08.34-2.08.92-2.9L6.4 8.62Z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="mbar">
+  <div class="m"><b>Step</b><span id="hStep">0</span></div>
+  <div class="m"><b>Buffer</b><span id="hBuf">0/0</span></div>
+  <div class="m"><b>Waiting</b><span id="hWait">0</span></div>
+  <div class="m"><b>Scheduled</b><span id="hSched">0</span></div>
+  <div class="m"><b>Throughput</b><span id="hThru">0</span></div>
+  <div class="m"><b>Avg Fill</b><span id="hFill">0%</span></div>
+  <div class="m warn"><b>Overflow</b><span id="hOvf">0</span></div>
+  <div class="m"><b>Door Util</b><span id="hDoor">0%</span></div>
+  <div class="m" id="hDisWrap" style="display:none"><b>Disruptions</b><span id="hDis">0</span></div>
+</div>
+
+<main class="vp" id="vp">
+  <canvas id="cv"></canvas>
+  <div class="toast" id="toast"></div>
+</main>
+
+<footer class="timeline">
+  <div class="pg">
+    <button id="bPrev" class="icon-btn"><svg viewBox="0 0 24 24"><path d="M6 5h3v14H6V5Zm4 7 8-7v14l-8-7Z"/></svg></button>
+    <button id="bPlay" class="icon-btn"><svg id="pIco" viewBox="0 0 24 24"><path d="M8 5v14l11-7L8 5Z"/></svg></button>
+    <button id="bNext" class="icon-btn"><svg viewBox="0 0 24 24"><path d="M15 5h3v14h-3V5ZM6 19V5l8 7-8 7Z"/></svg></button>
+  </div>
+  <div class="rw">
+    <input id="slider" type="range" min="0" max="100" value="0" />
+    <div class="ticks"><span>0</span><span id="tickEnd">100</span></div>
+  </div>
+  <div id="tReadout" class="tr">t=0</div>
+  <select id="spd">
+    <option value="2">2 fps</option>
+    <option value="4" selected>4 fps</option>
+    <option value="8">8 fps</option>
+    <option value="16">16 fps</option>
+  </select>
+</footer>
+
+<script>
+// ── Palette ───────────────────────────────────────────────────
+const LC = ["#2563eb","#16a34a","#dc2626","#d97706","#7c3aed",
+            "#0891b2","#db2777","#059669","#9333ea","#ca8a04"];
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d"), vp = $("vp");
+let LW = 0, LH = 0;
+
+const S = { frames:[], idx:0, playing:false, fps:4, lastTick:0,
+            nD:8, nL:5, maxDep:28, inbScroll:0 };
+
+// ── Canvas helpers ────────────────────────────────────────────
+function resize() {
+  const r = vp.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  LW = r.width; LH = r.height;
+  cv.width  = LW * dpr; cv.height = LH * dpr;
+  cv.style.width = LW + "px"; cv.style.height = LH + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (S.frames[S.idx]) drawFrame(S.frames[S.idx]);
+}
+
+function rrect(x, y, w, h, r, fill, stroke, lw=1) {
+  if (w <= 0 || h <= 0) return;
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w,y, x+w,y+h, r); ctx.arcTo(x+w,y+h, x,y+h, r);
+  ctx.arcTo(x,y+h, x,y, r);     ctx.arcTo(x,y, x+w,y, r);
+  ctx.closePath();
+  if (fill)  { ctx.fillStyle   = fill;  ctx.fill(); }
+  if (stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+
+function txt(s, x, y, size, color, align="center", baseline="middle", bold=false) {
+  ctx.fillStyle = color;
+  ctx.font = `${bold?"bold ":""}${size}px Inter,system-ui,sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = baseline;
+  ctx.fillText(String(s), x, y);
+}
+
+function hex2rgba(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function dominantLane(ship) {
+  let best=-1, bv=-Infinity;
+  for (const [k,v] of Object.entries(ship||{})) if(+v>bv){bv=+v;best=+k;}
+  return Math.max(0, best);
+}
+
+// ── Layout geometry ───────────────────────────────────────────
+// Flow: waiting queue → at-dock trucks → unloading zone → sorting → loading zone → outbound
+function geo() {
+  const PAD  = 24;
+  const FARR = 62;
+  const bldL = PAD, bldR = LW - PAD - FARR, bldW = bldR - bldL;
+
+  const waitH  = Math.min(LH * 0.14, 88);   // scrollable waiting queue (top)
+  const matchH = Math.min(LH * 0.14, 86);   // at-dock matched trucks
+  const outH   = Math.min(LH * 0.18, 108);  // outbound trucks (bottom)
+  const inbH   = waitH;                      // alias for scroll handler
+  const bldTop = waitH + matchH;
+  const bldBot = LH - outH;
+  const bldH   = bldBot - bldTop;
+
+  // interior zones top→bottom: unloading → sorting → loading
+  const unlH  = bldH * 0.36;
+  const sortH = bldH * 0.20;
+  const loadH = bldH - unlH - sortH;
+  const unlY  = bldTop;
+  const sortY = unlY + unlH;
+  const loadY = sortY + sortH;
+
+  const doorXs = Array.from({length:S.nD}, (_,i) => bldL + bldW*(i+1)/(S.nD+1));
+  const laneXs = Array.from({length:S.nL}, (_,i) => bldL + bldW*(i+1)/(S.nL+1));
+
+  const doorW = Math.min(54, bldW/(S.nD+1) * 0.84);
+  const laneW = Math.min(58, bldW/(S.nL+1) * 0.84);
+
+  return { bldL,bldR,bldW,bldTop,bldBot,bldH,
+           unlY,unlH,sortY,sortH,loadY,loadH,
+           waitH,matchH,inbH,outH,
+           doorXs,laneXs,doorW,laneW };
+}
+
+// ── Main draw ─────────────────────────────────────────────────
+function drawFrame(frame) {
+  if (!frame) return;
+  ctx.clearRect(0, 0, LW, LH);
+  ctx.fillStyle = "#f4f1ea"; ctx.fillRect(0,0,LW,LH);
+
+  const g = geo();
+  drawBuilding(g);
+  drawConnections(frame, g);
+  drawInboundTrucks(frame, g);
+  drawMatchedTrucks(frame, g);
+  drawUnloadingZone(frame, g);
+  drawSortingZone(frame, g);
+  drawLoadingZone(frame, g);
+  drawOutboundTrucks(frame, g);
+  drawFlowIndicators(frame, g);  // cargo flow arrows on top of everything
+  drawDisruptions(frame, g);
+  updateHud(frame);
+}
+
+// ── Building shell + flow arrow ───────────────────────────────
+function drawBuilding(g) {
+  const {bldL,bldR,bldW,bldTop,bldBot,bldH,
+         unlY,unlH,sortY,sortH,loadY,loadH,
+         doorXs,laneXs,doorW,laneW} = g;
+
+  rrect(bldL, bldTop, bldW, bldH, 0, "#e8e3d8", null);
+
+  // at-dock band background (between waiting queue and building)
+  rrect(bldL, g.waitH, bldW, g.matchH, 0, "rgba(241,245,249,.70)", null);
+  // divider line between waiting queue and at-dock band
+  ctx.strokeStyle = "#c8c2b8"; ctx.lineWidth = 1; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(bldL, g.waitH); ctx.lineTo(bldR, g.waitH); ctx.stroke();
+
+  // zone tints (top→bottom: unloading=cool, sorting=green, loading=warm)
+  rrect(bldL, unlY,  bldW, unlH,  0, "rgba(239,246,255,.55)", null);
+  rrect(bldL, sortY, bldW, sortH, 0, "rgba(229,246,240,.60)", null);
+  rrect(bldL, loadY, bldW, loadH, 0, "rgba(255,251,235,.55)", null);
+
+  // zone dividers
+  ctx.setLineDash([6,4]); ctx.lineWidth = 1; ctx.strokeStyle = "#b0aaa0";
+  ctx.beginPath(); ctx.moveTo(bldL, sortY); ctx.lineTo(bldR, sortY); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bldL, loadY); ctx.lineTo(bldR, loadY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // zone labels
+  txt("UNLOADING", bldL+5, unlY+unlH/2,   9, "#8a9099", "left");
+  txt("SORTING",   bldL+5, sortY+sortH/2, 9, "#8a9099", "left");
+  txt("LOADING",   bldL+5, loadY+loadH/2, 9, "#8a9099", "left");
+
+  // walls
+  ctx.strokeStyle = "#5a534a"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(bldL, bldTop); ctx.lineTo(bldR, bldTop); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bldL, bldBot); ctx.lineTo(bldR, bldBot); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bldL, bldTop); ctx.lineTo(bldL, bldBot); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bldR, bldTop); ctx.lineTo(bldR, bldBot); ctx.stroke();
+
+  // inbound dock notches — TOP wall, one per door, width = doorW
+  doorXs.forEach(x => {
+    ctx.fillStyle = "#f4f1ea";
+    ctx.fillRect(x - doorW/2, bldTop - 2, doorW, 6);
+  });
+
+  // outbound dock notches — BOTTOM wall, one per lane, width = laneW
+  laneXs.forEach(x => {
+    ctx.fillStyle = "#f4f1ea";
+    ctx.fillRect(x - laneW/2, bldBot - 2, laneW, 6);
+  });
+
+  drawFlowArrow(g);
+}
+
+// ── Flow arrow (right side) ───────────────────────────────────
+function drawFlowArrow(g) {
+  const x = g.bldR + 22;
+  const pts = [
+    { y: g.waitH  * 0.45,           label: "waiting" },
+    { y: g.waitH + g.matchH * 0.5,  label: "at dock" },
+    { y: g.unlY + g.unlH  * 0.45,   label: "unload"  },
+    { y: g.sortY + g.sortH * 0.5,   label: "sort"    },
+    { y: g.loadY + g.loadH * 0.55,  label: "load"    },
+    { y: g.bldBot + g.outH * 0.55,  label: "outbound"},
+  ];
+  ctx.save();
+  ctx.strokeStyle = "rgba(150,144,138,.65)"; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(x, p.y));
+  ctx.stroke(); ctx.setLineDash([]);
+  // arrowhead
+  const ay = pts[pts.length-1].y + 9;
+  ctx.fillStyle = "rgba(150,144,138,.65)";
+  ctx.beginPath(); ctx.moveTo(x,ay); ctx.lineTo(x-4,ay-7); ctx.lineTo(x+4,ay-7);
+  ctx.closePath(); ctx.fill();
+  // dots + labels
+  pts.forEach(p => {
+    ctx.fillStyle = "#c0bab2";
+    ctx.beginPath(); ctx.arc(x, p.y, 3, 0, Math.PI*2); ctx.fill();
+    txt(p.label, x+7, p.y, 8, "#b0aaa0", "left");
+  });
+  ctx.restore();
+}
+
+// ── Connections: busy door → ALL destination lanes (one arc per shipment) ──
+function drawConnections(frame, g) {
+  const {laneXs,doorXs,unlY,unlH,loadY} = g;
+  const dashOffset = -(frame.t * 4 % 14);
+  ctx.save();
+
+  (frame.doors||[]).forEach((d,i) => {
+    if (!d.is_busy || d.is_failed) return;
+    const shipments = d.assigned_truck_shipments || {};
+    const totalVol  = d.assigned_truck_volume || 1;
+    const entries   = Object.entries(shipments);
+    if (!entries.length) return;
+
+    const x1 = doorXs[i], y1 = unlY + unlH - 4;
+
+    entries.forEach(([laneId, vol]) => {
+      const lane = +laneId;
+      if (lane < 0 || lane >= laneXs.length) return;
+      const color   = LC[lane] || "#888";
+      const ratio   = vol / totalVol;            // thickness proportional to volume
+      const lw      = Math.max(1, ratio * 5);
+
+      const x2 = laneXs[lane], y2 = loadY + 4;
+      const my = (y1 + y2) / 2;
+
+      ctx.strokeStyle = hex2rgba(color, 0.55);
+      ctx.lineWidth   = lw;
+      ctx.setLineDash([5,4]);
+      ctx.lineDashOffset = dashOffset;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(x1, my, x2, my, x2, y2);
+      ctx.stroke();
+
+      // arrowhead at lane
+      ctx.setLineDash([]);
+      ctx.fillStyle = hex2rgba(color, 0.72);
+      _arrowHead(x2, y2, 0, 1, Math.max(4, lw + 2));
+    });
+  });
+  ctx.restore();
+}
+
+// helper: draw filled arrowhead pointing in direction (dx,dy), tip at (x,y)
+function _arrowHead(x, y, dx, dy, size) {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx/len, uy = dy/len;
+  const px = -uy, py = ux;
+  ctx.beginPath();
+  ctx.moveTo(x + ux*size, y + uy*size);
+  ctx.lineTo(x + px*size*0.6 - ux*size*0.5, y + py*size*0.6 - uy*size*0.5);
+  ctx.lineTo(x - px*size*0.6 - ux*size*0.5, y - py*size*0.6 - uy*size*0.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ── Cargo flow indicators (active when cargo is moving) ────────
+function drawFlowIndicators(frame, g) {
+  const {doorXs,laneXs,waitH,matchH,bldTop,unlY,unlH,sortY,loadY,loadH,bldBot,doorW,laneW} = g;
+  const doors = frame.doors || [];
+  const lanes = frame.lanes || [];
+  const dashOffset = -(frame.t * 4 % 14);
+
+  ctx.save();
+
+  // ── A. At-dock truck → Unloading zone (per busy door) ──────
+  doors.forEach((door, i) => {
+    if (!door.is_busy || door.is_failed) return;
+    const shipments = door.assigned_truck_shipments || {};
+    const entries   = Object.entries(shipments);
+    const cx = doorXs[i];
+    const y1 = bldTop - 2;
+    const y2 = unlY + unlH * 0.35;
+
+    // draw one colored segment per lane (stacked along arrow)
+    const segLen = y2 - y1;
+    const totalVol = entries.reduce((s,[,v])=>s+(+v),0) || 1;
+    let sy = y1;
+    entries.forEach(([lid, vol]) => {
+      const sh = segLen * (+vol / totalVol);
+      ctx.strokeStyle = hex2rgba(LC[+lid]||"#888", 0.60);
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4,3]);
+      ctx.lineDashOffset = dashOffset - sy;
+      ctx.beginPath(); ctx.moveTo(cx, sy); ctx.lineTo(cx, sy+sh); ctx.stroke();
+      sy += sh;
+    });
+    ctx.setLineDash([]);
+
+    // single arrowhead at bottom (dominant lane color)
+    const domColor = LC[entries.length ? +entries.sort((a,b)=>b[1]-a[1])[0][0] : 0]||"#888";
+    ctx.fillStyle = hex2rgba(domColor, 0.75);
+    _arrowHead(cx, y2, 0, 1, 5);
+  });
+
+  // ── B. Loading zone → Outbound truck (per lane with queue) ──
+  lanes.forEach((lane, i) => {
+    const queue = lane.queue_volume || 0;
+    if (queue < 0.5) return;
+    const color  = LC[i] || "#888";
+    const cx = laneXs[i];
+    const y1 = loadY + loadH * 0.65;
+    const y2 = bldBot + 2;
+
+    ctx.strokeStyle = hex2rgba(color, 0.55);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4,3]);
+    ctx.lineDashOffset = dashOffset;
+    ctx.beginPath(); ctx.moveTo(cx, y1); ctx.lineTo(cx, y2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = hex2rgba(color, 0.75);
+    _arrowHead(cx, y2, 0, 1, 5);
+
+    // queue volume badge
+    const bw = 36, bh = 14, bx = cx - bw/2, by = (y1+y2)/2 - bh/2;
+    rrect(bx, by, bw, bh, 3, hex2rgba(color, 0.15), hex2rgba(color, 0.50), 1);
+    txt(`${queue.toFixed(0)}cbm`, cx, by + bh/2, 8, "#1d2329");
+  });
+
+  ctx.restore();
+}
+
+// ── Inbound trucks (above building, all visible + horizontal scroll) ──
+function drawInboundTrucks(frame, g) {
+  const {bldL, bldW, waitH, doorW} = g;
+  const waiting   = frame.waiting_trucks  || [];
+  const scheduled = frame.scheduled_trucks || [];
+
+  const tW      = doorW;
+  const gap     = Math.max(3, tW * 0.12);
+  const unitW   = tW + gap;
+  const cabH    = Math.max(8, tW * 0.18);
+  const trailerH = waitH - cabH - 14;
+
+  // clamp scroll so it never overscrolls
+  const totalW    = waiting.length * unitW;
+  const maxScroll = Math.max(0, totalW - bldW);
+  S.inbScroll = Math.min(S.inbScroll, maxScroll);
+
+  // clip drawing to waiting queue band
+  ctx.save();
+  ctx.beginPath(); ctx.rect(bldL, 0, bldW, waitH); ctx.clip();
+  ctx.translate(bldL - S.inbScroll, 0);
+
+  waiting.forEach((truck, i) => {
+    const x  = i * unitW;
+    const cx = x + tW / 2;
+    const y  = 4;
+    const isRush = truck.is_rush;
+    const dom    = dominantLane(truck.shipments);
+    const color  = LC[dom] || "#888";
+
+    // trailer body (neutral — cargo strip shows lane colors)
+    rrect(x, y, tW, trailerH, 3,
+      isRush ? "rgba(249,115,22,.18)" : "rgba(220,216,208,.55)",
+      isRush ? "#f97316" : "#a09890", isRush ? 2 : 1);
+
+    // destination lane chips (bottom strip)
+    const chips = Object.keys(truck.shipments||{}).slice(0,5);
+    const cw = (tW-6) / Math.max(chips.length, 1);
+    chips.forEach((k, j) => {
+      ctx.fillStyle = LC[+k] || "#ccc";
+      ctx.fillRect(x+3+j*cw, y+trailerH-5, cw-1, 4);
+    });
+
+    txt((truck.total_volume||0).toFixed(0)+"cbm", cx, y+trailerH/2, 9, "#1d2329");
+    if (isRush) txt("RUSH", cx, y+7, 7, "#ea580c", "center", "top", true);
+
+    // cab at bottom (backed into dock)
+    rrect(x+tW*.12, y+trailerH+2, tW*.76, cabH-2, 3, "#3c4146", null);
+  });
+
+  ctx.restore();
+
+  // horizontal scrollbar
+  if (maxScroll > 0) {
+    const sbH = 3, sbY = waitH - 3;
+    const sbW = Math.max(30, bldW * (bldW / totalW));
+    const sbX = bldL + (S.inbScroll / maxScroll) * (bldW - sbW);
+    rrect(bldL, sbY, bldW, sbH, 1, "rgba(200,196,188,.30)", null);
+    rrect(sbX,  sbY, sbW,  sbH, 1, "rgba(90,83,74,.45)",    null);
+  }
+
+  // caption + counts
+  const schedBadge = scheduled.length > 0 ? `  ·  ${scheduled.length} scheduled` : "";
+  txt(`inbound trucks  (${waiting.length} waiting${schedBadge})`,
+      bldL, 2, 9, "#9ca3af", "left", "top");
+}
+
+// ── At-dock matched trucks (between waiting queue and building) ──
+function drawMatchedTrucks(frame, g) {
+  const {doorXs, waitH, matchH, bldTop, doorW, bldL, bldR} = g;
+  const doors = frame.doors || [];
+  const tW    = doorW;
+  const cabH  = Math.max(7, tW * 0.15);
+  const trailerH = matchH - cabH - 8;
+
+  // section label
+  txt("at dock", bldL - 2, waitH + matchH/2, 9, "#9ca3af", "right");
+
+  doors.forEach((door, i) => {
+    const cx = doorXs[i], x = cx - tW/2, y = waitH + 4;
+
+    if (door.is_busy && !door.is_failed) {
+      const shipments = door.assigned_truck_shipments || {};
+      const entries   = Object.entries(shipments).sort((a,b) => b[1]-a[1]); // largest first
+      const totalVol  = (door.assigned_truck_volume || 0);
+      const domLane   = entries.length > 0 ? +entries[0][0] : door.assigned_lane;
+      const domColor  = LC[domLane] || "#888";
+
+      // trailer shell (neutral — cargo strip shows lane colors)
+      rrect(x, y, tW, trailerH, 3, "rgba(220,216,208,.55)", "#a09890", 1);
+
+      // multi-lane cargo strip — proportional color bars
+      if (entries.length > 0) {
+        const stripY = y + 4, stripH = 5;
+        let sx = x + 3, availW = tW - 6;
+        entries.forEach(([laneId, vol]) => {
+          const barW = availW * (vol / totalVol);
+          ctx.fillStyle = LC[+laneId] || "#ccc";
+          ctx.fillRect(sx, stripY, barW, stripH);
+          sx += barW;
+        });
+      }
+
+      // volume label
+      txt(`${totalVol.toFixed(0)}cbm`, cx, y + trailerH/2 - 5, 9, "#1d2329");
+
+      // lane breakdown — show all that fit, remainder as "+Xcbm"
+      const rowH2   = 11, labelTop2 = y + trailerH/2 + 4;
+      const maxFit2 = Math.max(1, Math.floor((trailerH/2 - 8) / rowH2));
+      let shownVol2 = 0;
+      entries.slice(0, maxFit2).forEach(([laneId, vol], j) => {
+        shownVol2 += +vol;
+        txt(`L${laneId} ${(+vol).toFixed(0)}cbm`, cx, labelTop2 + j*rowH2, 8, LC[+laneId]||"#888", "center", "top", true);
+      });
+      if (entries.length > maxFit2) {
+        const rest2 = totalVol - shownVol2;
+        txt(`+${rest2.toFixed(0)}cbm`, cx, labelTop2 + maxFit2*rowH2, 7, "#9ca3af", "center", "top");
+      }
+
+      // progress bar (remaining unload time)
+      const prog = 1 - Math.min(1, (door.remaining_time||0) / 10);
+      const bx = x+3, bw2 = tW-6, barY = y + trailerH - 7;
+      rrect(bx, barY, bw2, 4, 2, "#d5d0c4", null);
+      if (prog > 0) rrect(bx, barY, bw2*prog, 4, 2, hex2rgba(domColor,.85), null);
+
+      // cab at bottom
+      rrect(x+tW*.12, y+trailerH+1, tW*.76, cabH-2, 3, "#3c4146", null);
+
+      // connector to door
+      ctx.strokeStyle = hex2rgba(domColor, 0.35);
+      ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(cx, y+trailerH+cabH); ctx.lineTo(cx, bldTop); ctx.stroke();
+      ctx.setLineDash([]);
+
+    } else if (door.is_failed) {
+      rrect(x, y, tW, trailerH+cabH, 3, "rgba(239,68,68,.08)", "rgba(248,113,113,.40)", 1);
+      txt("✕", cx, y+(trailerH+cabH)/2, 12, "#f87171");
+      // dashed connector (failed)
+      ctx.strokeStyle = "rgba(248,113,113,.30)";
+      ctx.lineWidth = 1; ctx.setLineDash([2,4]);
+      ctx.beginPath(); ctx.moveTo(cx, y+trailerH+cabH); ctx.lineTo(cx, bldTop); ctx.stroke();
+      ctx.setLineDash([]);
+
+    } else {
+      // idle — empty slot
+      rrect(x, y, tW, trailerH+cabH, 3, "rgba(200,196,188,.12)", "rgba(200,196,188,.28)", 1);
+      txt("–", cx, y+(trailerH+cabH)/2, 13, "#d0cbc4");
+      // light connector
+      ctx.strokeStyle = "rgba(200,196,188,.30)";
+      ctx.lineWidth = 1; ctx.setLineDash([2,4]);
+      ctx.beginPath(); ctx.moveTo(cx, y+trailerH+cabH); ctx.lineTo(cx, bldTop); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  });
+}
+
+// ── Unloading zone (doors, top of building) ───────────────────
+function drawUnloadingZone(frame, g) {
+  const {doorXs,unlY,unlH,doorW} = g;
+  const doors = frame.doors || [];
+  const dH    = unlH - 10;
+
+  doors.forEach((door, i) => {
+    const cx = doorXs[i], x = cx - doorW/2, y = unlY + 5;
+    const busy   = door.is_busy, failed = door.is_failed;
+
+    const bg = failed ? "rgba(239,68,68,.14)" : busy ? "rgba(220,38,38,.10)" : "rgba(22,163,74,.10)";
+    const bd = failed ? "#f87171" : busy ? "#dc2626" : "#16a34a";
+    rrect(x, y, doorW, dH, 4, bg, bd, 1.5);
+
+    // LED
+    const lc = failed ? "#f97316" : busy ? "#dc2626" : "#16a34a";
+    ctx.beginPath(); ctx.arc(cx, y+8, 4, 0, Math.PI*2);
+    ctx.fillStyle = lc; ctx.fill();
+
+    txt(`D${door.door_id+1}`, cx, y+17, 9, "#374151");
+
+    if (failed) {
+      txt("FAIL", cx, y+dH/2,    10, "#dc2626");
+      txt(`${door.failure_remaining}st`, cx, y+dH/2+12, 9, "#dc2626");
+    } else if (busy) {
+      // progress bar (dominant lane color)
+      const prog    = 1 - Math.min(1, (door.remaining_time||0)/10);
+      const domLane = door.assigned_lane >= 0 ? door.assigned_lane : 0;
+      const bx = x+4, bw2 = doorW-8, barY = y+dH-10;
+      rrect(bx, barY, bw2, 5, 2, "#d5d0c4", null);
+      if (prog > 0) rrect(bx, barY, bw2*prog, 5, 2, LC[domLane]||"#888", null);
+
+      // total volume
+      txt(`${(door.assigned_truck_volume||0).toFixed(0)}cbm`, cx, y+24, 9, "#374151");
+
+      // per-lane shipment breakdown (proportional color bar + label)
+      const shipments = door.assigned_truck_shipments || {};
+      const totalVol  = door.assigned_truck_volume || 1;
+      const entries   = Object.entries(shipments).sort((a,b)=>b[1]-a[1]);
+      const stripY    = y+34, stripH = 4;
+      let sx = x+4, avail = doorW-8;
+      entries.forEach(([lid, vol]) => {
+        const w = avail * (+vol / totalVol);
+        ctx.fillStyle = LC[+lid] || "#ccc";
+        ctx.fillRect(sx, stripY, w, stripH);
+        sx += w;
+      });
+
+      // lane labels — show all that fit; remainder shown as "+Xcbm"
+      const rowH   = 11, labelTop = y + 42;
+      const maxFit = Math.max(1, Math.floor((dH - 44) / rowH));
+      let shownVol = 0;
+      entries.slice(0, maxFit).forEach(([lid, vol], j) => {
+        shownVol += +vol;
+        txt(`L${lid} ${(+vol).toFixed(0)}`, cx, labelTop + j*rowH, 8, LC[+lid]||"#888", "center", "top", true);
+      });
+      if (entries.length > maxFit) {
+        const rest = totalVol - shownVol;
+        txt(`+${(rest).toFixed(0)}cbm`, cx, labelTop + maxFit*rowH, 7, "#9ca3af", "center", "top");
+      }
+    } else {
+      txt("idle", cx, y+dH/2, 9, "#9ca3af");
+    }
+  });
+}
+
+// ── Sorting zone (buffer, horizontal fill bar) ────────────────
+function drawSortingZone(frame, g) {
+  const {bldL, bldW, sortY, sortH} = g;
+  const cap  = frame.buffer_capacity || 60;
+  const buf  = frame.buffer || 0;
+  const fill = Math.min(1, buf / cap);
+  const px = bldL+16, pw = bldW-32, ph = sortH-14, py = sortY+7;
+
+  rrect(px, py, pw, ph, 4, "rgba(15,118,110,.08)", "rgba(15,118,110,.40)", 1.5);
+  if (fill > 0.01) {
+    const fw = (pw-6)*fill;
+    const fc = fill > 0.92 ? "#b91c1c" : fill > 0.72 ? "#d97706" : "#0f766e";
+    rrect(px+3, py+3, fw, ph-6, 3, hex2rgba(fc,.80), null);
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.fillRect(px+3+fw-2, py+3, 2, ph-6);
+  }
+  const pct   = Math.round(fill*100);
+  const label = `BUFFER  ${Math.round(buf)} / ${Math.round(cap)} CBM  (${pct}%)`;
+  txt(label, px+pw/2, py+ph/2, 11, fill > 0.72 ? "#7c2d12" : "#1d2329");
+}
+
+// ── Loading zone (lanes, bottom of building) ──────────────────
+function drawLoadingZone(frame, g) {
+  const {laneXs,loadY,loadH,laneW} = g;
+  const lanes = frame.lanes || [];
+  const lH    = loadH - 10;
+
+  lanes.forEach((lane, i) => {
+    const cx = laneXs[i], x = cx - laneW/2, y = loadY + 5;
+    const cong  = Math.min(1, lane.congestion || 0);
+    const queue = lane.queue_volume || 0;
+    const color = LC[i] || "#888";
+
+    rrect(x, y, laneW, lH, 3, hex2rgba(color,.10), hex2rgba(color,.40), 1);
+
+    if (cong > 0.01) {
+      const fh = (lH-6)*cong;
+      const fy = y+3+(lH-6)-fh;
+      const fc = cong > 0.85 ? "#b91c1c" : cong > 0.45 ? "#d97706" : color;
+      rrect(x+3, fy, laneW-6, fh, 2, hex2rgba(fc,.80), null);
+      ctx.fillStyle = "rgba(255,255,255,.50)";
+      ctx.fillRect(x+3, fy, laneW-6, 2);
+    }
+
+    txt(`Q${Math.round(queue)}`, cx, y+lH/2, 9, "#374151");
+
+    // lane color dot (bottom edge)
+    ctx.beginPath(); ctx.arc(cx, y+lH-8, 4, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+  });
+}
+
+// ── Outbound trucks (below building, aligned with lanes) ──────
+function drawOutboundTrucks(frame, g) {
+  const {laneXs,bldBot,outH,laneW} = g;
+  const lanes = frame.lanes || [];
+  const tW    = laneW;
+  const cabH  = Math.max(8, tW * 0.18);
+  const trailerH = outH - cabH - 10;
+
+  lanes.forEach((lane, i) => {
+    const cx = laneXs[i], x = cx - tW/2;
+    const cabY     = bldBot + 4;
+    const trailerY = cabY + cabH + 2;
+    const fill  = Math.min(1, lane.outbound_fill_rate || 0);
+    const timer = lane.outbound_departure_timer || 0;
+    const color = LC[i] || "#888";
+    const soon  = timer <= 4;
+
+    // cab at TOP (truck backed into dock from below)
+    rrect(x+tW*.12, cabY, tW*.76, cabH-2, 3, "#3c4146", null);
+
+    // trailer body (neutral shell — fill level shows load state)
+    rrect(x, trailerY, tW, trailerH, 3, "rgba(220,216,208,.55)", soon ? "#fbbf24" : "#a09890", soon ? 2 : 1);
+
+    // water fill inside trailer
+    if (fill > 0.01) {
+      const innerH = trailerH - 8;
+      const fh = innerH * fill;
+      const fy = trailerY + 4;
+      const fc = fill > 0.85 ? "#15803d" : fill > 0.45 ? "#d97706" : color;
+      rrect(x+3, fy, tW-6, fh, 2, hex2rgba(fc,.82), null);
+      ctx.fillStyle = "rgba(255,255,255,.55)";
+      ctx.fillRect(x+3, fy+fh-2, tW-6, 2);
+    }
+
+    // fill % label
+    const fillLabel = fill > 0.01 ? `${Math.round(fill*100)}%` : "empty";
+    txt(fillLabel, cx, trailerY + trailerH/2, 10, "#1d2329");
+
+    // timer bar (bottom of trailer)
+    const barY = trailerY + trailerH - 8;
+    rrect(x+3, barY, tW-6, 4, 2, "#d5d0c4", null);
+    const tr = Math.min(1, timer / S.maxDep);
+    if (tr > 0) {
+      const tc = tr < 0.25 ? "#b91c1c" : tr < 0.55 ? "#d97706" : "#15803d";
+      rrect(x+3, barY, (tW-6)*tr, 4, 2, tc, null);
+    }
+    txt(`T-${timer}`, cx, bldBot+2, 8, soon ? "#b91c1c" : "#67717d", "center", "top");
+  });
+
+  txt("outbound trucks", g.bldL, LH-2, 9, "#9ca3af", "left", "bottom");
+}
+
+// ── Disruption badges ─────────────────────────────────────────
+function drawDisruptions(frame, g) {
+  const disps = (frame.disruptions || []).slice(0, 5);
+  if (!disps.length) return;
+  const ICONS  = { door_failure:"🔴", rush_truck:"🚛", timer_shock:"⚡" };
+  const LABELS = {
+    door_failure: d => `D${(d.door_id??0)+1} FAIL (${d.duration}st)`,
+    rush_truck:   d => `RUSH ${(d.total_volume||0).toFixed(1)}cbm`,
+    timer_shock:  d => `L${d.lane_id} T→${d.forced_timer}`,
+  };
+  ctx.font = "bold 10px Inter,system-ui,sans-serif";
+  let bx = g.bldR - 8;
+  [...disps].reverse().forEach(d => {
+    const t  = (ICONS[d.type]||"⚠")+" "+(LABELS[d.type]?LABELS[d.type](d):d.type);
+    const tw = ctx.measureText(t).width + 12;
+    bx -= tw + 4;
+    const bgc = d.type==="door_failure" ? "rgba(254,226,226,.95)"
+              : d.type==="rush_truck"   ? "rgba(255,237,213,.95)"
+              :                           "rgba(254,249,195,.95)";
+    const bdc = d.type==="door_failure" ? "#fca5a5"
+              : d.type==="rush_truck"   ? "#fdba74" : "#fcd34d";
+    rrect(bx, g.sortY+4, tw, 18, 3, bgc, bdc, 1);
+    ctx.fillStyle="#1d2329"; ctx.textAlign="left"; ctx.textBaseline="middle";
+    ctx.fillText(t, bx+6, g.sortY+13);
+  });
+}
+
+// ── HUD update ────────────────────────────────────────────────
+function updateHud(frame) {
+  const m    = frame.metrics || {};
+  const dep  = m.outbound_departures || 0;
+  const fill = dep > 0 ? (m.total_fill_rate||0) / dep : 0;
+  const dutil = m.door_busy_steps
+    ? m.door_busy_steps / ((m.total_steps||1) * Math.max(1, S.nD)) : 0;
+  const dis = (m.disruption_door_failures||0)+(m.disruption_rush_trucks||0)+(m.disruption_timer_shocks||0);
+
+  $("hStep").textContent  = frame.t;
+  $("hBuf").textContent   = `${Math.round(frame.buffer)}/${Math.round(frame.buffer_capacity)}`;
+  $("hWait").textContent  = (frame.waiting_trucks||[]).length;
+  $("hSched").textContent = (frame.scheduled_trucks||[]).length;
+  $("hThru").textContent  = Math.round(m.total_throughput||0);
+  $("hFill").textContent  = `${Math.round(fill*100)}%`;
+  $("hOvf").textContent   = m.buffer_overflow_count||0;
+  $("hDoor").textContent  = `${Math.round(dutil*100)}%`;
+  $("tReadout").textContent = `t=${frame.t}`;
+  $("hDisWrap").style.display = dis > 0 ? "" : "none";
+  $("hDis").textContent = dis;
+}
+
+// ── Frame control ─────────────────────────────────────────────
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function setFrame(i) {
+  if (!S.frames.length) return;
+  S.idx = clamp(Math.round(i), 0, S.frames.length-1);
+  $("slider").value = String(S.idx);
+  drawFrame(S.frames[S.idx]);
+}
+
+function togglePlay() {
+  if (!S.frames.length) return;
+  S.playing = !S.playing;
+  if (S.playing && S.idx >= S.frames.length-1) setFrame(0);
+  syncIcon();
+}
+function syncIcon() {
+  $("bPlay").title = S.playing ? "일시정지" : "재생";
+  $("pIco").innerHTML = S.playing
+    ? '<path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z"/>'
+    : '<path d="M8 5v14l11-7L8 5Z"/>';
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  if (S.playing && S.frames.length) {
+    if (now - S.lastTick >= 1000/S.fps) {
+      S.lastTick = now;
+      if (S.idx >= S.frames.length-1) { S.playing=false; syncIcon(); }
+      else setFrame(S.idx+1);
+    }
+  }
+}
+
+// ── Data ──────────────────────────────────────────────────────
+function applyData(data, src) {
+  if (!data?.frames?.length) throw new Error("frames 배열 없음");
+  S.frames = data.frames;
+  S.idx    = 0; S.playing = false;
+  const meta = data.meta || {};
+  S.nD = Number(meta.num_doors) || data.frames[0]?.doors?.length  || 3;
+  S.nL = Number(meta.num_lanes) || data.frames[0]?.lanes?.length  || 5;
+  S.maxDep = Number(meta.dispatch_interval_max) ||
+    Math.max(1, ...data.frames.flatMap(f=>(f.lanes||[]).map(l=>l.outbound_departure_timer||0)));
+
+  $("mPolicy").textContent = `policy: ${meta.policy??"-"}`;
+  $("mSeed").textContent   = `seed: ${meta.seed??"-"}`;
+  $("mSteps").textContent  = `steps: ${data.frames.length}`;
+  $("mSrc").textContent    = `source: ${src}`;
+  $("slider").max = String(data.frames.length-1);
+  $("tickEnd").textContent = String(data.frames[data.frames.length-1]?.t ?? data.frames.length-1);
+  S.inbScroll = 0;
+  syncIcon(); resize(); setFrame(0);
+}
+
+function showToast(msg) { const t=$("toast"); t.textContent=msg; t.style.display="block"; }
+function hideToast()    { const t=$("toast"); t.style.display="none"; }
+
+async function loadUrl(url) {
+  showToast(`${url} 로드 중…`);
+  try {
+    const res = await fetch(url, {cache:"no-store"});
+    if (!res.ok) throw new Error(`${res.status}`);
+    applyData(await res.json(), url); hideToast();
+  } catch(e) { showToast(`로드 실패: ${e.message}. 파일을 직접 열어 주세요.`); }
+}
+
+function readFile(file) {
+  const r = new FileReader();
+  r.onload = () => { try { applyData(JSON.parse(r.result), file.name); hideToast(); }
+                     catch(e) { showToast(`파싱 실패: ${e.message}`); } };
+  r.readAsText(file);
+}
+
+// ── Wiring ────────────────────────────────────────────────────
+window.addEventListener("resize", resize);
+$("bPrev").addEventListener("click", () => setFrame(S.idx-1));
+$("bNext").addEventListener("click", () => setFrame(S.idx+1));
+$("bPlay").addEventListener("click", togglePlay);
+$("btnReset").addEventListener("click", () => setFrame(0));
+$("slider").addEventListener("input", e => { S.playing=false; syncIcon(); setFrame(+e.target.value); });
+$("spd").addEventListener("change",   e => S.fps = +e.target.value);
+$("srcSel").addEventListener("change", e => loadUrl(e.target.value));
+$("fileIn").addEventListener("change", e => { const f=e.target.files?.[0]; if(f)readFile(f); e.target.value=""; });
+vp.addEventListener("dragover",  e => { e.preventDefault(); vp.classList.add("drop"); showToast("JSON을 놓으면 불러옵니다."); });
+vp.addEventListener("dragleave", () => { vp.classList.remove("drop"); hideToast(); });
+vp.addEventListener("drop",      e => { e.preventDefault(); vp.classList.remove("drop"); const f=e.dataTransfer.files?.[0]; if(f)readFile(f); });
+
+// horizontal scroll on inbound truck area
+cv.addEventListener("wheel", e => {
+  const rect = cv.getBoundingClientRect();
+  const my   = e.clientY - rect.top;
+  const g    = geo();
+  if (my < g.waitH) {
+    e.preventDefault();
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    S.inbScroll = Math.max(0, S.inbScroll + delta);
+    if (S.frames[S.idx]) drawFrame(S.frames[S.idx]);
+  }
+}, { passive: false });
+document.addEventListener("keydown", e => {
+  if (e.key==="ArrowLeft")  setFrame(S.idx-1);
+  if (e.key==="ArrowRight") setFrame(S.idx+1);
+  if (e.key===" ") { e.preventDefault(); togglePlay(); }
+});
+
+resize();
+requestAnimationFrame(animate);
+loadUrl($("srcSel").value);
+</script>
+</body>
+</html>
