@@ -63,6 +63,62 @@
       box-shadow:0 4px 16px rgba(33,35,38,.12);
     }
     .vp.drop .toast { display:block; }
+
+    /* ── Cargo Modal ── */
+    .modal-backdrop {
+      display:none; position:fixed; inset:0; background:rgba(29,35,41,.45);
+      z-index:50; align-items:center; justify-content:center;
+    }
+    .modal-backdrop.open { display:flex; }
+    .modal {
+      background:var(--panel); border:1px solid var(--line); border-radius:12px;
+      box-shadow:0 12px 48px rgba(29,35,41,.22); width:min(640px,94vw);
+      max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+    }
+    .modal-head {
+      display:flex; justify-content:space-between; align-items:center;
+      padding:16px 20px 12px; border-bottom:1px solid var(--line);
+    }
+    .modal-head h2 { font-size:15px; font-weight:760; }
+    .modal-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    .modal-close {
+      width:28px; height:28px; border:1px solid var(--line); border-radius:6px;
+      background:#fffaf0; cursor:pointer; font-size:15px; display:flex;
+      align-items:center; justify-content:center; color:var(--muted);
+    }
+    .modal-close:hover { background:#ffe8c0; color:var(--ink); }
+    .modal-body { overflow-y:auto; padding:16px 20px 20px; }
+
+    .cargo-grid {
+      display:grid; grid-template-columns:auto 1fr 1fr 1fr auto;
+      gap:0; border:1px solid var(--line); border-radius:8px; overflow:hidden;
+    }
+    .cg-head, .cg-cell {
+      padding:7px 10px; font-size:12px; border-bottom:1px solid var(--line);
+    }
+    .cg-head {
+      background:#f0ece3; font-weight:700; color:var(--muted); font-size:11px;
+      text-transform:uppercase; letter-spacing:.04em;
+    }
+    .cg-row:last-child .cg-cell { border-bottom:none; }
+    .cg-row:hover .cg-cell { background:#faf7f0; }
+    .cg-cell.num { text-align:right; font-weight:640; font-variant-numeric:tabular-nums; }
+    .cg-cell.bar-cell { padding:7px 10px; }
+    .bar-wrap { height:10px; border-radius:4px; background:#ede9e0; overflow:hidden; width:100%; min-width:60px; }
+    .bar-fill { height:100%; border-radius:4px; transition:width .3s; }
+    .cg-total .cg-cell {
+      background:#f0ece3; font-weight:760; border-top:2px solid var(--line);
+      border-bottom:none;
+    }
+    .lane-dot {
+      display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px;
+    }
+    .modal-legend {
+      display:flex; gap:14px; margin-top:14px; font-size:11px; color:var(--muted);
+      padding-top:12px; border-top:1px solid var(--line);
+    }
+    .legend-item { display:flex; align-items:center; gap:5px; }
+    .legend-dot { width:10px; height:10px; border-radius:2px; }
   </style>
 </head>
 <body>
@@ -76,12 +132,36 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
-      <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
-      <option value="sim_mip_8door_all.json">MIP 8door all disruptions</option>
-      <option value="sim_rl_8door_disruption_baseline.json">RL 8door baseline</option>
-      <option value="sim_rl_8door_disruption_all.json">RL 8door all disruptions</option>
-      <option value="sim_heuristic.json">Heuristic</option>
+      <optgroup label="── MIP 8door ──">
+        <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
+        <option value="sim_mip_8door_door_failure.json">MIP 8door door failure</option>
+        <option value="sim_mip_8door_rush_truck.json">MIP 8door rush truck</option>
+        <option value="sim_mip_8door_timer_shock.json">MIP 8door timer shock</option>
+        <option value="sim_mip_8door_all.json">MIP 8door all disruptions</option>
+      </optgroup>
+      <optgroup label="── RL 8door ──">
+        <option value="sim_rl_8door_disruption_baseline.json">RL 8door baseline</option>
+        <option value="sim_rl_8door_disruption_door_failure.json">RL 8door door failure</option>
+        <option value="sim_rl_8door_disruption_rush_truck.json">RL 8door rush truck</option>
+        <option value="sim_rl_8door_disruption_timer_shock.json">RL 8door timer shock</option>
+        <option value="sim_rl_8door_disruption_all.json">RL 8door all disruptions</option>
+      </optgroup>
+      <optgroup label="── 3door baseline ──">
+        <option value="sim_mip.json">MIP 3door</option>
+        <option value="sim_mip_baseline.json">MIP 3door baseline</option>
+        <option value="sim_mip_door_failure.json">MIP 3door door failure</option>
+        <option value="sim_mip_rush_truck.json">MIP 3door rush truck</option>
+        <option value="sim_mip_timer_shock.json">MIP 3door timer shock</option>
+        <option value="sim_mip_all_disruptions.json">MIP 3door all disruptions</option>
+        <option value="sim_rl.json">RL 3door</option>
+        <option value="sim_greedy.json">Greedy</option>
+        <option value="sim_heuristic.json">Heuristic</option>
+        <option value="sim_fifo.json">FIFO</option>
+      </optgroup>
     </select>
+    <button id="btnCargo" class="file-label" title="화물 현황 팝업" style="gap:5px;">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M4 6h16v2H4zm2 5h12v2H6zm2 5h8v2H8z"/></svg>화물 현황
+    </button>
     <label class="file-label">JSON<input id="fileIn" type="file" accept=".json" /></label>
     <button id="btnReset" class="icon-btn" title="처음으로">
       <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6.5 12 11V8c2.76 0 5 2.24 5 5 0 .86-.22 1.67-.6 2.38l2.19 1.2A7.45 7.45 0 0 0 19.5 13 7.5 7.5 0 0 0 12 5Zm-5.6 3.62A7.45 7.45 0 0 0 4.5 13 7.5 7.5 0 0 0 12 20.5V23l5-4.5-5-4.5v3a5 5 0 0 1-5-5c0-1.08.34-2.08.92-2.9L6.4 8.62Z"/></svg>
@@ -124,6 +204,29 @@
     <option value="16">16 fps</option>
   </select>
 </footer>
+
+<!-- ── Cargo Modal ────────────────────────────────────── -->
+<div class="modal-backdrop" id="cargoModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <h2>화물 현황</h2>
+        <div class="modal-sub" id="cargoModalSub"></div>
+      </div>
+      <button class="modal-close" id="cargoModalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="cargo-grid" id="cargoGrid"></div>
+      <div class="modal-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div>출고 완료</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div>시스템 잔류</div>
+        <div class="legend-item" style="margin-left:auto;color:var(--muted);font-size:10px;">
+          잔류 = 레인 큐 + 아웃바운드 적재 + 대기 트럭 + 도어 처리 중
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── Palette ───────────────────────────────────────────────────
@@ -888,6 +991,125 @@ function readFile(file) {
   r.readAsText(file);
 }
 
+// ── Cargo Modal ───────────────────────────────────────────────
+function computeCargoStats() {
+  const frames = S.frames;
+  if (!frames.length) return null;
+  const f0 = frames[0];
+  const fN = frames[frames.length - 1];
+  const nL = S.nL;
+
+  const totalInbound = Array(nL).fill(0);
+
+  // frame[0]: scheduled + waiting + at-door trucks = all cargo in universe
+  const addShipments = (shipments, arr) => {
+    Object.entries(shipments || {}).forEach(([lane, vol]) => {
+      const k = +lane;
+      if (k >= 0 && k < nL) arr[k] += +vol;
+    });
+  };
+  (f0.scheduled_trucks || []).forEach(t => addShipments(t.shipments, totalInbound));
+  (f0.waiting_trucks   || []).forEach(t => addShipments(t.shipments, totalInbound));
+  (f0.doors            || []).forEach(d => addShipments(d.assigned_truck_shipments, totalInbound));
+
+  // remaining at final frame
+  const remaining = Array(nL).fill(0);
+  (fN.lanes || []).forEach((l, k) => {
+    if (k < nL) remaining[k] += (l.queue_volume || 0) + (l.outbound_loaded || 0);
+  });
+  (fN.waiting_trucks || []).forEach(t => addShipments(t.shipments, remaining));
+  (fN.doors          || []).forEach(d => addShipments(d.assigned_truck_shipments, remaining));
+
+  const dispatched = totalInbound.map((v, k) => Math.max(0, v - remaining[k]));
+
+  return { totalInbound, remaining, dispatched };
+}
+
+function openCargoModal() {
+  const stats = computeCargoStats();
+  if (!stats) return;
+  const { totalInbound, remaining, dispatched } = stats;
+
+  // subtitle
+  const meta = {};
+  if (S.frames.length) {
+    const f = S.frames[S.frames.length - 1];
+    meta.throughput = (f.metrics || {}).total_throughput || 0;
+    meta.overflow   = (f.metrics || {}).buffer_overflow_count || 0;
+  }
+  $("cargoModalSub").textContent =
+    `전체 처리량 ${meta.throughput?.toFixed(0)} CBM  ·  오버플로우 ${meta.overflow}회`;
+
+  // build grid
+  const grid = $("cargoGrid");
+  const totalIn  = totalInbound.reduce((a,b)=>a+b,0);
+  const totalDis = dispatched.reduce((a,b)=>a+b,0);
+  const totalRem = remaining.reduce((a,b)=>a+b,0);
+
+  let html = `
+    <div class="cg-head">목적지</div>
+    <div class="cg-head" style="text-align:right">총 입고</div>
+    <div class="cg-head" style="text-align:right">총 출고</div>
+    <div class="cg-head" style="text-align:right">잔류</div>
+    <div class="cg-head" style="text-align:right">출고율</div>
+  `;
+
+  for (let k = 0; k < S.nL; k++) {
+    const inb   = totalInbound[k];
+    const dis   = dispatched[k];
+    const rem   = remaining[k];
+    const rate  = inb > 0 ? dis / inb : 0;
+    const disW  = inb > 0 ? (dis / inb * 100).toFixed(1) : "0.0";
+    const remW  = inb > 0 ? (rem / inb * 100).toFixed(1) : "0.0";
+    const color = LC[k % LC.length];
+    const isLast = k === S.nL - 1;
+    const cellStyle = isLast ? "border-bottom:none" : "";
+
+    html += `
+      <div class="cg-cell" style="${cellStyle}">
+        <span class="lane-dot" style="background:${color}"></span>Lane ${k}
+      </div>
+      <div class="cg-cell num" style="${cellStyle}">${inb.toFixed(0)} cbm</div>
+      <div class="cg-cell bar-cell" style="${cellStyle}">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="bar-wrap" style="flex:1">
+            <div class="bar-fill" style="width:${disW}%;background:#16a34a"></div>
+          </div>
+          <span style="min-width:54px;text-align:right;font-size:12px;font-weight:640">${dis.toFixed(0)} cbm</span>
+        </div>
+      </div>
+      <div class="cg-cell bar-cell" style="${cellStyle}">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="bar-wrap" style="flex:1">
+            <div class="bar-fill" style="width:${remW}%;background:#d97706"></div>
+          </div>
+          <span style="min-width:54px;text-align:right;font-size:12px;font-weight:640">${rem.toFixed(0)} cbm</span>
+        </div>
+      </div>
+      <div class="cg-cell num" style="${cellStyle};color:${rate>=0.8?'#16a34a':rate>=0.5?'#d97706':'#dc2626'}">
+        ${(rate*100).toFixed(1)}%
+      </div>`;
+  }
+
+  // total row
+  const totalRate = totalIn > 0 ? totalDis / totalIn : 0;
+  html += `
+    <div class="cg-cell" style="background:#f0ece3;font-weight:760;border-top:2px solid var(--line);border-bottom:none">합계</div>
+    <div class="cg-cell num" style="background:#f0ece3;border-top:2px solid var(--line);border-bottom:none">${totalIn.toFixed(0)} cbm</div>
+    <div class="cg-cell num" style="background:#f0ece3;border-top:2px solid var(--line);border-bottom:none">${totalDis.toFixed(0)} cbm</div>
+    <div class="cg-cell num" style="background:#f0ece3;border-top:2px solid var(--line);border-bottom:none">${totalRem.toFixed(0)} cbm</div>
+    <div class="cg-cell num" style="background:#f0ece3;border-top:2px solid var(--line);border-bottom:none;color:${totalRate>=0.8?'#16a34a':totalRate>=0.5?'#d97706':'#dc2626'}">
+      ${(totalRate*100).toFixed(1)}%
+    </div>`;
+
+  grid.innerHTML = html;
+  $("cargoModal").classList.add("open");
+}
+
+function closeCargoModal() {
+  $("cargoModal").classList.remove("open");
+}
+
 // ── Wiring ────────────────────────────────────────────────────
 window.addEventListener("resize", resize);
 $("bPrev").addEventListener("click", () => setFrame(S.idx-1));
@@ -898,6 +1120,9 @@ $("slider").addEventListener("input", e => { S.playing=false; syncIcon(); setFra
 $("spd").addEventListener("change",   e => S.fps = +e.target.value);
 $("srcSel").addEventListener("change", e => loadUrl(e.target.value));
 $("fileIn").addEventListener("change", e => { const f=e.target.files?.[0]; if(f)readFile(f); e.target.value=""; });
+$("btnCargo").addEventListener("click", openCargoModal);
+$("cargoModalClose").addEventListener("click", closeCargoModal);
+$("cargoModal").addEventListener("click", e => { if(e.target===$("cargoModal")) closeCargoModal(); });
 vp.addEventListener("dragover",  e => { e.preventDefault(); vp.classList.add("drop"); showToast("JSON을 놓으면 불러옵니다."); });
 vp.addEventListener("dragleave", () => { vp.classList.remove("drop"); hideToast(); });
 vp.addEventListener("drop",      e => { e.preventDefault(); vp.classList.remove("drop"); const f=e.dataTransfer.files?.[0]; if(f)readFile(f); });
@@ -915,6 +1140,10 @@ cv.addEventListener("wheel", e => {
   }
 }, { passive: false });
 document.addEventListener("keydown", e => {
+  if ($("cargoModal").classList.contains("open")) {
+    if (e.key==="Escape") closeCargoModal();
+    return;
+  }
   if (e.key==="ArrowLeft")  setFrame(S.idx-1);
   if (e.key==="ArrowRight") setFrame(S.idx+1);
   if (e.key===" ") { e.preventDefault(); togglePlay(); }

@@ -40,7 +40,12 @@
       "Bash(python3 viz/export_simulation.py --policy heuristic --seed 42 --output viz/sim_heuristic.json)",
       "Bash(python3 mip/solve_mip.py --seed 42 --output viz/sim_mip.json)",
       "Bash(python3 viz/export_simulation.py --policy rl --seed 42 --output viz/sim_rl.json)",
-      "Bash(grep \"\\\\.py$\")"
+      "Bash(grep \"\\\\.py$\")",
+      "Bash(python3 gen_scenarios.py)",
+      "Bash(awk '{print $6, $7, $8, $9}')",
+      "Bash(awk '{print $NF}')",
+      "Bash(python3 gen_scenarios.py --mip)",
+      "Bash(python3 viz/export_simulation.py --policy greedy --seed 42)"
     ],
     "additionalDirectories": [
       "/Users/yskim/Desktop/05. 물류 ai/lcl_gym/checkpoints"
