@@ -119,6 +119,44 @@
     }
     .legend-item { display:flex; align-items:center; gap:5px; }
     .legend-dot { width:10px; height:10px; border-radius:2px; }
+
+    /* ── Departure Modal ── */
+    .dep-summary {
+      display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;
+    }
+    .dep-stat {
+      flex:1; min-width:100px; padding:10px 14px; border:1px solid var(--line);
+      border-radius:8px; background:var(--panel);
+    }
+    .dep-stat b { display:block; font-size:10px; color:var(--muted); font-weight:640;
+                  text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+    .dep-stat span { font-size:18px; font-weight:780; }
+    .dep-filter {
+      display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; align-items:center;
+    }
+    .dep-filter span { font-size:11px; color:var(--muted); }
+    .dep-chip {
+      padding:3px 10px; border:1px solid var(--line); border-radius:99px;
+      font-size:11px; cursor:pointer; background:var(--panel); font-family:inherit;
+    }
+    .dep-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .dep-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .dep-table th {
+      background:#f0ece3; padding:6px 10px; text-align:left; font-weight:700;
+      font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+      border-bottom:1px solid var(--line); position:sticky; top:0;
+    }
+    .dep-table th.r, .dep-table td.r { text-align:right; }
+    .dep-table td { padding:6px 10px; border-bottom:1px solid var(--line); }
+    .dep-table tr:last-child td { border-bottom:none; }
+    .dep-table tr:hover td { background:#faf7f0; }
+    .dep-table tr.empty-dep td { color:var(--warn); }
+    .fill-chip {
+      display:inline-block; padding:1px 7px; border-radius:99px; font-size:11px;
+      font-weight:640;
+    }
+    .dep-scroll { max-height:340px; overflow-y:auto; border:1px solid var(--line);
+                  border-radius:8px; }
   </style>
 </head>
 <body>
@@ -159,6 +197,9 @@
         <option value="sim_fifo.json">FIFO</option>
       </optgroup>
     </select>
+    <button id="btnDep" class="file-label" title="출고 트럭 기록" style="gap:5px;">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2a3 3 0 0 0 6 0h6a3 3 0 0 0 6 0h2v-5l-3-4zm-.5 1.5 1.96 2.5H17V9.5h2.5zM6 18.5A1.5 1.5 0 1 1 7.5 17 1.5 1.5 0 0 1 6 18.5zm11 0A1.5 1.5 0 1 1 18.5 17 1.5 1.5 0 0 1 17 18.5z"/></svg>출고 기록
+    </button>
     <button id="btnCargo" class="file-label" title="화물 현황 팝업" style="gap:5px;">
       <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M4 6h16v2H4zm2 5h12v2H6zm2 5h8v2H8z"/></svg>화물 현황
     </button>
@@ -204,6 +245,41 @@
     <option value="16">16 fps</option>
   </select>
 </footer>
+
+<!-- ── Departure Modal ───────────────────────────────── -->
+<div class="modal-backdrop" id="depModal">
+  <div class="modal" style="width:min(740px,96vw)">
+    <div class="modal-head">
+      <div>
+        <h2>출고 트럭 기록</h2>
+        <div class="modal-sub" id="depModalSub"></div>
+      </div>
+      <button class="modal-close" id="depModalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="dep-summary" id="depSummary"></div>
+      <div class="dep-filter">
+        <span>레인 필터:</span>
+        <button class="dep-chip active" data-lane="all">전체</button>
+      </div>
+      <div class="dep-scroll">
+        <table class="dep-table">
+          <thead>
+            <tr>
+              <th>출발 시각</th>
+              <th>레인</th>
+              <th class="r">적재량</th>
+              <th class="r">용량</th>
+              <th>탑재율</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="depTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Cargo Modal ────────────────────────────────────── -->
 <div class="modal-backdrop" id="cargoModal">
@@ -991,6 +1067,117 @@ function readFile(file) {
   r.readAsText(file);
 }
 
+// ── Departure Modal ───────────────────────────────────────────
+function computeDepartures() {
+  const frames = S.frames;
+  const nL = S.nL;
+  const deps = [];
+
+  for (let t = 0; t < frames.length - 1; t++) {
+    const f     = frames[t];
+    const fNext = frames[t + 1];
+    for (let k = 0; k < nL; k++) {
+      const lane     = (f.lanes     || [])[k];
+      const laneNext = (fNext.lanes || [])[k];
+      if (!lane || !laneNext) continue;
+      // timer 리셋 = 출발 이벤트
+      if (laneNext.outbound_departure_timer > lane.outbound_departure_timer) {
+        deps.push({
+          t:        f.t,
+          lane:     k,
+          loaded:   lane.outbound_loaded   || 0,
+          capacity: lane.outbound_capacity || 1,
+          fill:     lane.outbound_fill_rate|| 0,
+          isEmpty:  (lane.outbound_loaded  || 0) === 0,
+        });
+      }
+    }
+  }
+  return deps.sort((a, b) => a.t - b.t || a.lane - b.lane);
+}
+
+let _depData = [];   // cache for filter reuse
+
+function renderDepTable(filterLane) {
+  const rows = filterLane === "all" ? _depData : _depData.filter(d => d.lane === filterLane);
+  const tbody = $("depTableBody");
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">출발 기록 없음</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(d => {
+    const color  = LC[d.lane % LC.length];
+    const pct    = (d.fill * 100).toFixed(1);
+    const bgFill = d.fill >= 0.8 ? "#dcfce7" : d.fill >= 0.5 ? "#fef9c3" : "#fee2e2";
+    const fgFill = d.fill >= 0.8 ? "#15803d" : d.fill >= 0.5 ? "#92400e" : "#991b1b";
+    const status = d.isEmpty
+      ? `<span style="color:#c2410c;font-weight:640">빈 출발</span>`
+      : `<span style="color:#15803d">정상</span>`;
+    return `<tr class="${d.isEmpty ? "empty-dep" : ""}">
+      <td>t = ${d.t}</td>
+      <td><span class="lane-dot" style="background:${color}"></span>Lane ${d.lane}</td>
+      <td class="r">${d.loaded.toFixed(0)} cbm</td>
+      <td class="r">${d.capacity.toFixed(0)} cbm</td>
+      <td><span class="fill-chip" style="background:${bgFill};color:${fgFill}">${pct}%</span></td>
+      <td>${status}</td>
+    </tr>`;
+  }).join("");
+}
+
+function openDepModal() {
+  _depData = computeDepartures();
+
+  // 요약 통계
+  const total    = _depData.length;
+  const empties  = _depData.filter(d => d.isEmpty).length;
+  const avgFill  = total ? _depData.reduce((s, d) => s + d.fill, 0) / total : 0;
+  const totalCbm = _depData.reduce((s, d) => s + d.loaded, 0);
+
+  $("depModalSub").textContent =
+    `총 ${total}대 출발 · 총 적재 ${totalCbm.toFixed(0)} cbm`;
+
+  $("depSummary").innerHTML = `
+    <div class="dep-stat"><b>총 출발</b><span>${total}대</span></div>
+    <div class="dep-stat"><b>총 적재량</b><span>${totalCbm.toFixed(0)} cbm</span></div>
+    <div class="dep-stat"><b>평균 탑재율</b><span style="color:${avgFill>=0.8?'#16a34a':avgFill>=0.5?'#d97706':'#dc2626'}">${(avgFill*100).toFixed(1)}%</span></div>
+    <div class="dep-stat" style="border-color:${empties?'#fca5a5':'var(--line)'}">
+      <b>빈 출발</b><span style="color:${empties?'#dc2626':'#16a34a'}">${empties}대</span>
+    </div>`;
+
+  // 레인 필터 칩
+  const filterDiv = document.querySelector(".dep-filter");
+  // 기존 레인 칩 제거 후 재생성
+  [...filterDiv.querySelectorAll("[data-lane]")].forEach(el => el.remove());
+  const allChip = document.createElement("button");
+  allChip.className = "dep-chip active"; allChip.dataset.lane = "all";
+  allChip.textContent = "전체";
+  filterDiv.appendChild(allChip);
+
+  const lanes = [...new Set(_depData.map(d => d.lane))].sort((a, b) => a - b);
+  lanes.forEach(k => {
+    const btn = document.createElement("button");
+    btn.className = "dep-chip"; btn.dataset.lane = String(k);
+    btn.innerHTML = `<span class="lane-dot" style="background:${LC[k%LC.length]};vertical-align:middle"></span>Lane ${k}`;
+    filterDiv.appendChild(btn);
+  });
+
+  filterDiv.querySelectorAll("[data-lane]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      filterDiv.querySelectorAll("[data-lane]").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const v = btn.dataset.lane;
+      renderDepTable(v === "all" ? "all" : +v);
+    });
+  });
+
+  renderDepTable("all");
+  $("depModal").classList.add("open");
+}
+
+function closeDepModal() { $("depModal").classList.remove("open"); }
+
 // ── Cargo Modal ───────────────────────────────────────────────
 function computeCargoStats() {
   const frames = S.frames;
@@ -1120,6 +1307,9 @@ $("slider").addEventListener("input", e => { S.playing=false; syncIcon(); setFra
 $("spd").addEventListener("change",   e => S.fps = +e.target.value);
 $("srcSel").addEventListener("change", e => loadUrl(e.target.value));
 $("fileIn").addEventListener("change", e => { const f=e.target.files?.[0]; if(f)readFile(f); e.target.value=""; });
+$("btnDep").addEventListener("click", openDepModal);
+$("depModalClose").addEventListener("click", closeDepModal);
+$("depModal").addEventListener("click", e => { if(e.target===$("depModal")) closeDepModal(); });
 $("btnCargo").addEventListener("click", openCargoModal);
 $("cargoModalClose").addEventListener("click", closeCargoModal);
 $("cargoModal").addEventListener("click", e => { if(e.target===$("cargoModal")) closeCargoModal(); });
@@ -1140,6 +1330,10 @@ cv.addEventListener("wheel", e => {
   }
 }, { passive: false });
 document.addEventListener("keydown", e => {
+  if ($("depModal").classList.contains("open")) {
+    if (e.key==="Escape") closeDepModal();
+    return;
+  }
   if ($("cargoModal").classList.contains("open")) {
     if (e.key==="Escape") closeCargoModal();
     return;

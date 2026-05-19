@@ -45,7 +45,11 @@
       "Bash(awk '{print $6, $7, $8, $9}')",
       "Bash(awk '{print $NF}')",
       "Bash(python3 gen_scenarios.py --mip)",
-      "Bash(python3 viz/export_simulation.py --policy greedy --seed 42)"
+      "Bash(python3 viz/export_simulation.py --policy greedy --seed 42)",
+      "Bash(python3 rl/train_rl.py --episodes 2000 --lr 5e-4 --seed 42 --save-dir checkpoints_varied_dispatch)",
+      "Bash(echo \"학습 백그라운드 시작 PID=$!\")",
+      "Bash(kill 97814)",
+      "Bash(python3 train_varied_dispatch.py)"
     ],
     "additionalDirectories": [
       "/Users/yskim/Desktop/05. 물류 ai/lcl_gym/checkpoints"

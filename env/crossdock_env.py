@@ -34,6 +34,9 @@ DEFAULT_CONFIG = {
     "use_staggered_dispatch": True,
     "dispatch_interval_min": 12,  # 레인별 출발 주기 최솟값 (스텝)
     "dispatch_interval_max": 28,  # 레인별 출발 주기 최댓값 (스텝)
+    # 레인별 고정 출발 주기 (list 설정 시 use_staggered_dispatch 무시)
+    # 예: [8, 14, 22, 32, 45] → Lane 0이 가장 빠르고 Lane 4가 가장 느림
+    "lane_dispatch_intervals": None,
     # 스케줄 기반 입고
     "use_scheduled_arrivals": True,
     "arrival_count_min": 50,      # 에피소드당 최소 인바운드 트럭 수
@@ -90,6 +93,7 @@ class CrossDockEnv:
         self.use_staggered_dispatch: bool = cfg["use_staggered_dispatch"]
         self.dispatch_interval_min: int   = cfg["dispatch_interval_min"]
         self.dispatch_interval_max: int   = cfg["dispatch_interval_max"]
+        self.lane_dispatch_intervals: list = cfg["lane_dispatch_intervals"]  # None or list
         self.reward_alpha: float          = cfg["reward_alpha"]
         self.reward_beta: float         = cfg["reward_beta"]
         self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
@@ -150,7 +154,7 @@ class CrossDockEnv:
             OutboundTruck(
                 lane_id=k,
                 capacity=self.outbound_capacity,
-                departure_timer=self._sample_dispatch_timer(initial=True),
+                departure_timer=self._sample_dispatch_timer(initial=True, lane_id=k),
             )
             for k in range(self.num_lanes)
         ]
@@ -270,7 +274,13 @@ class CrossDockEnv:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _sample_dispatch_timer(self, initial: bool = False) -> int:
+    def _sample_dispatch_timer(self, initial: bool = False, lane_id: int = 0) -> int:
+        # 레인별 고정 주기가 설정된 경우
+        if self.lane_dispatch_intervals is not None:
+            interval = int(self.lane_dispatch_intervals[lane_id % len(self.lane_dispatch_intervals)])
+            if initial:
+                return int(self.rng.integers(1, interval + 1))
+            return interval
         if not self.use_staggered_dispatch:
             return self.dispatch_interval
         if initial:
@@ -437,7 +447,7 @@ class CrossDockEnv:
                 self.outbound_trucks[k] = OutboundTruck(
                     lane_id=k,
                     capacity=self.outbound_capacity,
-                    departure_timer=self._sample_dispatch_timer(),
+                    departure_timer=self._sample_dispatch_timer(lane_id=k),
                 )
             else:
                 depart_info.append(None)
