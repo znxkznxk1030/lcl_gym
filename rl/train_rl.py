@@ -81,9 +81,10 @@ def train(
 
     config = {**DEFAULT_CONFIG, **(env_config or {})}
     env = CrossDockEnv(config, seed=seed)
-    n_agents  = env.num_lanes
+    truck_selection_mode = env.use_truck_selection
+    n_agents  = env.top_k_trucks if truck_selection_mode else env.num_lanes
     obs_size  = env.obs_size
-    n_actions = 2  # 0=skip, 1=request
+    n_actions = 2  # 0=skip, 1=select (truck-selection) or request (lane mode)
 
     # ── 네트워크 초기화 ───────────────────────────────────────────────
     if shared_weights:
@@ -128,9 +129,15 @@ def train(
                 for k in range(n_agents)
             ]
             next_obs_list, env_rewards, done, info = env.step(actions)
-            rewards = shape_rewards(
-                env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors
-            )
+
+            if truck_selection_mode:
+                # broadcast mean team reward to all K truck-slot agents
+                team_reward = float(np.mean(env_rewards))
+                rewards = [team_reward] * n_agents
+            else:
+                rewards = shape_rewards(
+                    env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors
+                )
 
             for k in range(n_agents):
                 buffer.push(

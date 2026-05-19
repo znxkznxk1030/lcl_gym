@@ -37,6 +37,11 @@ DEFAULT_CONFIG = {
     # 레인별 고정 출발 주기 (list 설정 시 use_staggered_dispatch 무시)
     # 예: [8, 14, 22, 32, 45] → Lane 0이 가장 빠르고 Lane 4가 가장 느림
     "lane_dispatch_intervals": None,
+    # ── Truck-Selection RL 모드 ──────────────────────────────────────────────
+    # True: 에이전트 = 트럭슬롯 K개, 액션 = 이 트럭 선택/건너뜀
+    # False: 기존 레인 에이전트 모드
+    "use_truck_selection": False,
+    "top_k_trucks": 15,
     # 스케줄 기반 입고
     "use_scheduled_arrivals": True,
     "arrival_count_min": 50,      # 에피소드당 최소 인바운드 트럭 수
@@ -93,7 +98,9 @@ class CrossDockEnv:
         self.use_staggered_dispatch: bool = cfg["use_staggered_dispatch"]
         self.dispatch_interval_min: int   = cfg["dispatch_interval_min"]
         self.dispatch_interval_max: int   = cfg["dispatch_interval_max"]
-        self.lane_dispatch_intervals: list = cfg["lane_dispatch_intervals"]  # None or list
+        self.lane_dispatch_intervals: list  = cfg["lane_dispatch_intervals"]  # None or list
+        self.use_truck_selection: bool      = cfg["use_truck_selection"]
+        self.top_k_trucks: int              = cfg["top_k_trucks"]
         self.reward_alpha: float          = cfg["reward_alpha"]
         self.reward_beta: float         = cfg["reward_beta"]
         self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
@@ -123,10 +130,18 @@ class CrossDockEnv:
         self._seed = seed
         self.rng = np.random.default_rng(seed)
 
-        # obs: [queue, congestion, fill_rate, departure_in,
-        #        buffer_remaining, idle_doors, waiting_trucks, scheduled_trucks,
-        #        door_match_0 .. door_match_{D-1}]
-        self.obs_size: int = 8 + self.num_inbound_doors
+        # obs 크기
+        # - 기존 레인 모드:  [queue, congestion, fill_rate, timer,
+        #                     buffer_remaining, idle_doors, waiting, scheduled,
+        #                     door_match_0..D-1]  = 8 + D
+        # - 트럭선택 모드:   [timer×nL, queue×nL, buffer_remaining, idle_doors,
+        #                     waiting,              ← 글로벌 13개
+        #                     vol_L0..L4, total_vol, is_rush]  ← 트럭 7개
+        #                   = 13 + 7 = 20
+        if self.use_truck_selection:
+            self.obs_size: int = self.num_lanes * 2 + 3 + 7   # 13 + 7 = 20
+        else:
+            self.obs_size: int = 8 + self.num_inbound_doors
 
         self.lanes: List[Lane] = []
         self.doors: List[Door] = []
@@ -185,7 +200,8 @@ class CrossDockEnv:
     def step(
         self, actions: List[int]
     ) -> Tuple[List[np.ndarray], List[float], bool, Dict]:
-        assert len(actions) == self.num_lanes
+        expected = self.top_k_trucks if self.use_truck_selection else self.num_lanes
+        assert len(actions) == expected, f"Expected {expected} actions, got {len(actions)}"
 
         # 0. 돌발사항 적용
         self.disruption_log = []
@@ -233,6 +249,12 @@ class CrossDockEnv:
     # ------------------------------------------------------------------
 
     def get_obs(self) -> List[np.ndarray]:
+        if self.use_truck_selection:
+            return self._get_obs_truck_selection()
+        return self._get_obs_lane()
+
+    def _get_obs_lane(self) -> List[np.ndarray]:
+        """기존 레인 에이전트 모드 obs."""
         idle_doors       = sum(1 for d in self.doors if not d.is_busy)
         buffer_remaining = max(self.buffer_capacity - self.buffer, 0.0)
         waiting          = len(self.waiting_trucks)
@@ -242,7 +264,6 @@ class CrossDockEnv:
         for k, lane in enumerate(self.lanes):
             ob_truck = self.outbound_trucks[k]
 
-            # 도어별 화물 매칭도: 대기 트럭 중 이 레인 행 화물 비율 최대값
             door_matches = np.zeros(self.num_inbound_doors, dtype=np.float32)
             if self.waiting_trucks:
                 best_match = max(
@@ -255,19 +276,56 @@ class CrossDockEnv:
 
             obs = np.array(
                 [
-                    lane.queue_volume,                # 0: 레인 적재량
-                    lane.congestion,                  # 1: 혼잡도 (0~1)
-                    ob_truck.fill_rate,               # 2: 아웃바운드 탑재율 (0~1)
-                    float(ob_truck.departure_timer),  # 3: 아웃바운드 출발까지 스텝
-                    float(buffer_remaining),          # 4: 버퍼 여유량
-                    float(idle_doors),                # 5: 유휴 도어 수
-                    float(waiting),                   # 6: 대기 인바운드 트럭 수 (도어 배정 전)
-                    float(scheduled),                 # 7: 스케줄 대기 트럭 수 (아직 미도착)
+                    lane.queue_volume,
+                    lane.congestion,
+                    ob_truck.fill_rate,
+                    float(ob_truck.departure_timer),
+                    float(buffer_remaining),
+                    float(idle_doors),
+                    float(waiting),
+                    float(scheduled),
                 ]
-                + door_matches.tolist(),              # 8..8+D-1: 도어 매칭도
+                + door_matches.tolist(),
                 dtype=np.float32,
             )
             obs_list.append(obs)
+        return obs_list
+
+    def _get_obs_truck_selection(self) -> List[np.ndarray]:
+        """트럭선택 모드 obs.
+
+        에이전트 = 트럭슬롯 K개.
+        각 에이전트 obs (20개):
+          글로벌(13): departure_timer×nL, queue_volume×nL,
+                      buffer_remaining, idle_doors, waiting_count
+          트럭(7):    vol_L0..L{nL-1}, total_vol, is_rush
+        빈 슬롯(대기 트럭 부족)은 트럭 7개 값을 0으로 패딩.
+        """
+        K  = self.top_k_trucks
+        nL = self.num_lanes
+
+        timers   = np.array([ob.departure_timer for ob in self.outbound_trucks], dtype=np.float32)
+        queues   = np.array([lane.queue_volume   for lane in self.lanes],        dtype=np.float32)
+        buf_rem  = float(max(self.buffer_capacity - self.buffer, 0.0))
+        idle     = float(sum(1 for d in self.doors if not d.is_busy))
+        n_wait   = float(len(self.waiting_trucks))
+
+        global_ctx = np.concatenate([timers, queues, [buf_rem, idle, n_wait]])  # (13,)
+
+        trucks = self.waiting_trucks[:K]
+        obs_list = []
+        for i in range(K):
+            if i < len(trucks):
+                t = trucks[i]
+                vols = np.array([float(t.shipments.get(k, 0)) for k in range(nL)], dtype=np.float32)
+                truck_feat = np.array(
+                    [*vols, float(t.total_volume()), float(getattr(t, "is_rush", False))],
+                    dtype=np.float32,
+                )
+            else:
+                truck_feat = np.zeros(nL + 2, dtype=np.float32)  # 패딩
+
+            obs_list.append(np.concatenate([global_ctx, truck_feat]))
         return obs_list
 
     # ------------------------------------------------------------------
@@ -397,7 +455,13 @@ class CrossDockEnv:
         return overflow
 
     def _assign_doors(self, actions: List[int]):
-        """요청(action=1)한 레인을 긴급도 순으로 정렬, 유휴 도어에 차례로 배정."""
+        if self.use_truck_selection:
+            self._assign_doors_truck_selection(actions)
+        else:
+            self._assign_doors_lane(actions)
+
+    def _assign_doors_lane(self, actions: List[int]):
+        """기존 레인 모드: 요청 레인 긴급도 순 → FIFO 트럭 배정."""
         idle_doors = [d for d in self.doors if not d.is_busy and not d.is_failed]
         if not idle_doors or not self.waiting_trucks:
             return
@@ -406,13 +470,51 @@ class CrossDockEnv:
         if not requesting:
             return
 
-        # 긴급도: 아웃바운드 출발까지 남은 시간이 짧을수록 높은 우선순위
         requesting.sort(key=lambda k: self.outbound_trucks[k].departure_timer)
 
         for door, lane_id in zip(idle_doors, requesting):
             if not self.waiting_trucks:
                 break
             truck = self.waiting_trucks.pop(0)
+            processing_time = int(self.rng.integers(1, self.max_door_processing + 1))
+            door.assign(truck, lane_id, processing_time)
+
+    def _assign_doors_truck_selection(self, actions: List[int]):
+        """트럭선택 모드: 선택된 슬롯(action=1) 트럭을 큐 앞으로 이동 → 유휴 도어 FIFO 배정.
+
+        actions 길이 = top_k_trucks.
+        actions[i]=1 → i번 슬롯 트럭을 선택.
+        선택된 트럭들이 큐 앞으로 이동되고, 유휴 도어 수만큼 순서대로 배정.
+        아무도 선택 안 하면 아무 도어도 열지 않음(RL이 선택을 강제로 배움).
+        """
+        idle_doors = [d for d in self.doors if not d.is_busy and not d.is_failed]
+        if not idle_doors or not self.waiting_trucks:
+            return
+
+        n_avail = len(self.waiting_trucks)
+        selected = [i for i, a in enumerate(actions) if a == 1 and i < n_avail]
+        if not selected:
+            return
+
+        # 선택된 트럭을 큐 앞으로, 나머지는 뒤로
+        sel_set = set(selected)
+        front = [self.waiting_trucks[i] for i in selected]
+        rest  = [t for i, t in enumerate(self.waiting_trucks) if i not in sel_set]
+        self.waiting_trucks = front + rest
+
+        # 유휴 도어에 FIFO 배정
+        for door in idle_doors:
+            if not self.waiting_trucks:
+                break
+            truck = self.waiting_trucks.pop(0)
+            # 이 트럭에서 가장 긴급한 레인을 assigned_lane으로
+            if truck.shipments:
+                lane_id = min(
+                    truck.shipments.keys(),
+                    key=lambda k: self.outbound_trucks[k].departure_timer,
+                )
+            else:
+                lane_id = 0
             processing_time = int(self.rng.integers(1, self.max_door_processing + 1))
             door.assign(truck, lane_id, processing_time)
 
