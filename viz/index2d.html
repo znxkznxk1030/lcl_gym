@@ -170,6 +170,15 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── 2-Stage 8door ──">
+        <option value="sim_2stage_mip.json">2-Stage MIP</option>
+        <option value="sim_2stage_rl.json">2-Stage RL</option>
+        <option value="sim_2stage_ga.json">2-Stage GA</option>
+        <option value="sim_2stage_heuristic.json">2-Stage Heuristic</option>
+        <option value="sim_2stage_greedy.json">2-Stage Greedy</option>
+        <option value="sim_2stage_fifo.json">2-Stage FIFO</option>
+        <option value="sim_2stage_random.json">2-Stage Random</option>
+      </optgroup>
       <optgroup label="── MIP 8door ──">
         <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
         <option value="sim_mip_8door_door_failure.json">MIP 8door door failure</option>
@@ -212,12 +221,12 @@
 
 <div class="mbar">
   <div class="m"><b>Step</b><span id="hStep">0</span></div>
-  <div class="m"><b>Buffer</b><span id="hBuf">0/0</span></div>
+  <div class="m"><b>Buffer</b><span id="hBuf">0 cbm</span></div>
   <div class="m"><b>Waiting</b><span id="hWait">0</span></div>
   <div class="m"><b>Scheduled</b><span id="hSched">0</span></div>
   <div class="m"><b>Throughput</b><span id="hThru">0</span></div>
   <div class="m"><b>Avg Fill</b><span id="hFill">0%</span></div>
-  <div class="m warn"><b>Overflow</b><span id="hOvf">0</span></div>
+  <div class="m"><b>Empty Dep</b><span id="hOvf">0</span></div>
   <div class="m"><b>Door Util</b><span id="hDoor">0%</span></div>
   <div class="m" id="hDisWrap" style="display:none"><b>Disruptions</b><span id="hDis">0</span></div>
 </div>
@@ -297,7 +306,7 @@
         <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div>출고 완료</div>
         <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div>시스템 잔류</div>
         <div class="legend-item" style="margin-left:auto;color:var(--muted);font-size:10px;">
-          잔류 = 레인 큐 + 아웃바운드 적재 + 대기 트럭 + 도어 처리 중
+          잔류 = 레인 큐 + 아웃바운드 적재 + 대기 트럭 + 도어 처리 중  ·  버퍼 무제한
         </div>
       </div>
     </div>
@@ -314,7 +323,7 @@ const cv = $("cv"), ctx = cv.getContext("2d"), vp = $("vp");
 let LW = 0, LH = 0;
 
 const S = { frames:[], idx:0, playing:false, fps:4, lastTick:0,
-            nD:8, nL:5, maxDep:28, inbScroll:0 };
+            nD:8, nL:5, nOD:5, maxDep:28, inbScroll:0 };
 
 // ── Canvas helpers ────────────────────────────────────────────
 function resize() {
@@ -843,22 +852,22 @@ function drawUnloadingZone(frame, g) {
 // ── Sorting zone (buffer, horizontal fill bar) ────────────────
 function drawSortingZone(frame, g) {
   const {bldL, bldW, sortY, sortH} = g;
-  const cap  = frame.buffer_capacity || 60;
-  const buf  = frame.buffer || 0;
-  const fill = Math.min(1, buf / cap);
+  const buf = frame.buffer || 0;
+  // 무한 버퍼: 레인 큐 합계를 기준으로 바 채움 비율 계산 (시각적 가늠자)
+  const laneTotal = (frame.lanes||[]).reduce((s,l)=>s+(l.queue_volume||0), 0);
+  const refMax = Math.max(laneTotal * 2, buf, 50);  // 동적 기준선
+  const fill = Math.min(1, buf / refMax);
   const px = bldL+16, pw = bldW-32, ph = sortH-14, py = sortY+7;
 
   rrect(px, py, pw, ph, 4, "rgba(15,118,110,.08)", "rgba(15,118,110,.40)", 1.5);
   if (fill > 0.01) {
     const fw = (pw-6)*fill;
-    const fc = fill > 0.92 ? "#b91c1c" : fill > 0.72 ? "#d97706" : "#0f766e";
-    rrect(px+3, py+3, fw, ph-6, 3, hex2rgba(fc,.80), null);
+    rrect(px+3, py+3, fw, ph-6, 3, hex2rgba("#0f766e",.80), null);
     ctx.fillStyle = "rgba(255,255,255,.55)";
     ctx.fillRect(px+3+fw-2, py+3, 2, ph-6);
   }
-  const pct   = Math.round(fill*100);
-  const label = `BUFFER  ${Math.round(buf)} / ${Math.round(cap)} CBM  (${pct}%)`;
-  txt(label, px+pw/2, py+ph/2, 11, fill > 0.72 ? "#7c2d12" : "#1d2329");
+  const label = `BUFFER  ${Math.round(buf)} CBM  (무제한)`;
+  txt(label, px+pw/2, py+ph/2, 11, "#1d2329");
 }
 
 // ── Loading zone (lanes, bottom of building) ──────────────────
@@ -904,13 +913,30 @@ function drawOutboundTrucks(frame, g) {
     const cx = laneXs[i], x = cx - tW/2;
     const cabY     = bldBot + 4;
     const trailerY = cabY + cabH + 2;
-    const fill  = Math.min(1, lane.outbound_fill_rate || 0);
-    const timer = lane.outbound_departure_timer || 0;
-    const color = LC[i] || "#888";
-    const soon  = timer <= 4;
+
+    // 2-stage: outbound_door from lane, fallback to legacy lane fields
+    const od     = lane.outbound_door;
+    const fill   = Math.min(1, od ? (od.fill_rate || 0) : (lane.outbound_fill_rate || 0));
+    const timer  = od ? (od.loading_timer || 0) : (lane.outbound_departure_timer || 0);
+    const dest   = od ? od.assigned_dest : i;
+    const active = od ? true : (fill > 0 || timer > 0);
+    const color  = LC[dest >= 0 ? dest : i] || "#888";
+    const soon   = active && timer <= 4;
+
+    if (!active) {
+      // idle dock — no truck
+      rrect(x, trailerY, tW, trailerH, 3, "rgba(200,196,188,.12)", "rgba(200,196,188,.28)", 1);
+      txt("idle", cx, trailerY + trailerH/2, 9, "#c0bab2");
+      txt(`L${i}`, cx, bldBot+2, 8, "#c0bab2", "center", "top");
+      return;
+    }
 
     // cab at TOP (truck backed into dock from below)
     rrect(x+tW*.12, cabY, tW*.76, cabH-2, 3, "#3c4146", null);
+
+    // lane color stripe on cab (shows assigned destination)
+    ctx.fillStyle = hex2rgba(color, 0.70);
+    ctx.fillRect(x+tW*.12, cabY+1, tW*.76, 3);
 
     // trailer body (neutral shell — fill level shows load state)
     rrect(x, trailerY, tW, trailerH, 3, "rgba(220,216,208,.55)", soon ? "#fbbf24" : "#a09890", soon ? 2 : 1);
@@ -926,9 +952,16 @@ function drawOutboundTrucks(frame, g) {
       ctx.fillRect(x+3, fy+fh-2, tW-6, 2);
     }
 
+    // dest label (2-stage shows "L{dest}" chip)
+    if (od) {
+      const chipW = 26, chipH = 13;
+      rrect(cx - chipW/2, trailerY + 3, chipW, chipH, 3, hex2rgba(color, 0.20), hex2rgba(color, 0.60), 1);
+      txt(`L${dest}`, cx, trailerY + 3 + chipH/2, 8, color, "center", "middle", true);
+    }
+
     // fill % label
     const fillLabel = fill > 0.01 ? `${Math.round(fill*100)}%` : "empty";
-    txt(fillLabel, cx, trailerY + trailerH/2, 10, "#1d2329");
+    txt(fillLabel, cx, trailerY + trailerH/2 + (od ? 5 : 0), 10, "#1d2329");
 
     // timer bar (bottom of trailer)
     const barY = trailerY + trailerH - 8;
@@ -981,12 +1014,12 @@ function updateHud(frame) {
   const dis = (m.disruption_door_failures||0)+(m.disruption_rush_trucks||0)+(m.disruption_timer_shocks||0);
 
   $("hStep").textContent  = frame.t;
-  $("hBuf").textContent   = `${Math.round(frame.buffer)}/${Math.round(frame.buffer_capacity)}`;
+  $("hBuf").textContent   = `${Math.round(frame.buffer)} cbm`;   // 무한 버퍼 — 현재 적재량
   $("hWait").textContent  = (frame.waiting_trucks||[]).length;
   $("hSched").textContent = (frame.scheduled_trucks||[]).length;
   $("hThru").textContent  = Math.round(m.total_throughput||0);
   $("hFill").textContent  = `${Math.round(fill*100)}%`;
-  $("hOvf").textContent   = m.buffer_overflow_count||0;
+  $("hOvf").textContent   = m.empty_departures||0;               // overflow → 빈출발 횟수
   $("hDoor").textContent  = `${Math.round(dutil*100)}%`;
   $("tReadout").textContent = `t=${frame.t}`;
   $("hDisWrap").style.display = dis > 0 ? "" : "none";
@@ -1033,10 +1066,15 @@ function applyData(data, src) {
   S.frames = data.frames;
   S.idx    = 0; S.playing = false;
   const meta = data.meta || {};
-  S.nD = Number(meta.num_doors) || data.frames[0]?.doors?.length  || 3;
-  S.nL = Number(meta.num_lanes) || data.frames[0]?.lanes?.length  || 5;
-  S.maxDep = Number(meta.dispatch_interval_max) ||
-    Math.max(1, ...data.frames.flatMap(f=>(f.lanes||[]).map(l=>l.outbound_departure_timer||0)));
+  S.nD  = Number(meta.num_doors || meta.num_inbound_doors) || data.frames[0]?.doors?.length || 3;
+  S.nL  = Number(meta.num_lanes) || data.frames[0]?.lanes?.length || 5;
+  S.nOD = Number(meta.num_outbound_doors) || data.frames[0]?.outbound_doors?.length || S.nL;
+  S.maxDep = Number(meta.outbound_loading_time_max || meta.dispatch_interval_max) ||
+    Math.max(1,
+      ...data.frames.flatMap(f => [
+        ...(f.outbound_doors||[]).map(od => od.loading_timer||0),
+        ...(f.lanes||[]).map(l => l.outbound_departure_timer||0),
+      ]));
 
   $("mPolicy").textContent = `policy: ${meta.policy??"-"}`;
   $("mSeed").textContent   = `seed: ${meta.seed??"-"}`;
@@ -1073,23 +1111,47 @@ function computeDepartures() {
   const nL = S.nL;
   const deps = [];
 
+  // Check if this is 2-stage format (has outbound_doors array)
+  const is2Stage = (frames[0]?.outbound_doors?.length > 0);
+
   for (let t = 0; t < frames.length - 1; t++) {
     const f     = frames[t];
     const fNext = frames[t + 1];
-    for (let k = 0; k < nL; k++) {
-      const lane     = (f.lanes     || [])[k];
-      const laneNext = (fNext.lanes || [])[k];
-      if (!lane || !laneNext) continue;
-      // timer 리셋 = 출발 이벤트
-      if (laneNext.outbound_departure_timer > lane.outbound_departure_timer) {
-        deps.push({
-          t:        f.t,
-          lane:     k,
-          loaded:   lane.outbound_loaded   || 0,
-          capacity: lane.outbound_capacity || 1,
-          fill:     lane.outbound_fill_rate|| 0,
-          isEmpty:  (lane.outbound_loaded  || 0) === 0,
-        });
+
+    if (is2Stage) {
+      // 2-stage: departure when outbound_door goes from busy→idle (with loaded > 0)
+      const ods     = f.outbound_doors     || [];
+      const odsNext = fNext.outbound_doors || [];
+      ods.forEach((od, i) => {
+        const odNext = odsNext[i];
+        if (!odNext) return;
+        if (od.is_busy && !odNext.is_busy && (od.loaded || 0) > 0) {
+          deps.push({
+            t:        f.t,
+            lane:     od.assigned_dest >= 0 ? od.assigned_dest : i,
+            loaded:   od.loaded   || 0,
+            capacity: od.capacity || 15,
+            fill:     od.fill_rate || 0,
+            isEmpty:  (od.loaded || 0) === 0,
+          });
+        }
+      });
+    } else {
+      // Legacy: departure when per-lane outbound_departure_timer resets
+      for (let k = 0; k < nL; k++) {
+        const lane     = (f.lanes     || [])[k];
+        const laneNext = (fNext.lanes || [])[k];
+        if (!lane || !laneNext) continue;
+        if (laneNext.outbound_departure_timer > lane.outbound_departure_timer) {
+          deps.push({
+            t:        f.t,
+            lane:     k,
+            loaded:   lane.outbound_loaded    || 0,
+            capacity: lane.outbound_capacity  || 1,
+            fill:     lane.outbound_fill_rate || 0,
+            isEmpty:  (lane.outbound_loaded   || 0) === 0,
+          });
+        }
       }
     }
   }
@@ -1202,7 +1264,12 @@ function computeCargoStats() {
   // remaining at final frame
   const remaining = Array(nL).fill(0);
   (fN.lanes || []).forEach((l, k) => {
-    if (k < nL) remaining[k] += (l.queue_volume || 0) + (l.outbound_loaded || 0);
+    if (k < nL) {
+      remaining[k] += (l.queue_volume || 0);
+      // 2-stage: use outbound_door.loaded, legacy: use lane.outbound_loaded
+      const od = l.outbound_door;
+      remaining[k] += od ? (od.loaded || 0) : (l.outbound_loaded || 0);
+    }
   });
   (fN.waiting_trucks || []).forEach(t => addShipments(t.shipments, remaining));
   (fN.doors          || []).forEach(d => addShipments(d.assigned_truck_shipments, remaining));
@@ -1222,10 +1289,10 @@ function openCargoModal() {
   if (S.frames.length) {
     const f = S.frames[S.frames.length - 1];
     meta.throughput = (f.metrics || {}).total_throughput || 0;
-    meta.overflow   = (f.metrics || {}).buffer_overflow_count || 0;
+    meta.empty      = (f.metrics || {}).empty_departures || 0;
   }
   $("cargoModalSub").textContent =
-    `전체 처리량 ${meta.throughput?.toFixed(0)} CBM  ·  오버플로우 ${meta.overflow}회`;
+    `전체 처리량 ${meta.throughput?.toFixed(0)} CBM  ·  빈 출발 ${meta.empty}회`;
 
   // build grid
   const grid = $("cargoGrid");

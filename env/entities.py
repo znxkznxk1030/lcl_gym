@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -95,6 +97,68 @@ class Door:
             self.assigned_truck = None
             self.assigned_lane = -1
         return interrupted
+
+
+@dataclass
+class OutboundDoor:
+    """
+    Stage 2 아웃바운드 로딩 도크.
+
+    목적지(assigned_dest)는 트럭이 출발할 때마다 동적으로 재할당된다.
+    loading_timer 가 0이 되면 현재 트럭이 출발하고 도크는 idle 상태로 전환.
+    """
+
+    door_id: int
+    capacity: float = 15.0
+    is_busy: bool = False
+    assigned_dest: int = -1   # 현재 로딩 중인 목적지 (-1 = idle)
+    loaded: float = 0.0
+    loading_timer: int = 0    # 잔여 로딩 타임스텝
+
+    @property
+    def fill_rate(self) -> float:
+        return self.loaded / (self.capacity + 1e-8)
+
+    @property
+    def space_remaining(self) -> float:
+        return max(self.capacity - self.loaded, 0.0)
+
+    def start_loading(self, dest: int, loading_time: int) -> None:
+        """새 아웃바운드 트럭 수령 + 목적지 할당."""
+        self.is_busy = True
+        self.assigned_dest = dest
+        self.loaded = 0.0
+        self.loading_timer = loading_time
+
+    def add_load(self, volume: float) -> float:
+        """소팅 레인에서 화물 탑재. 실제 탑재량 반환."""
+        actual = min(volume, self.space_remaining)
+        self.loaded += actual
+        return actual
+
+    def tick(self) -> Tuple[bool, Optional[dict]]:
+        """
+        타이머 1 감소.
+        Returns
+        -------
+        (departed, depart_info) — departed=True 이면 트럭이 출발.
+        """
+        if not self.is_busy:
+            return False, None
+        self.loading_timer -= 1
+        if self.loading_timer <= 0:
+            info = {
+                "door_id":   self.door_id,
+                "dest":      self.assigned_dest,
+                "loaded":    self.loaded,
+                "fill_rate": self.fill_rate,
+                "empty":     self.fill_rate < 0.1,
+            }
+            self.is_busy = False
+            self.assigned_dest = -1
+            self.loaded = 0.0
+            return True, info
+        return False, None
 
 
 @dataclass

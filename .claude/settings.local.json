@@ -7,7 +7,11 @@
       "Bash(python -c \"import numpy as np; d = np.load\\('checkpoints/weights_final.npz'\\); print\\(list\\(d.keys\\(\\)\\)\\); print\\('W1 shape:', d['W1'].shape\\)\")",
       "Bash(open \"/Users/yskim/Desktop/05. 물류 ai/lcl_gym/viz/index.html\")",
       "Bash(xxd .gitignore)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(python ga/train_ga.py --pop 6 --gen 2 --eval 2 --bench-episodes 3)",
+      "Bash(python -c ' *)",
+      "Bash(python run_all_experiments_2stage.py)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

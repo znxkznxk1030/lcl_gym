@@ -44,7 +44,7 @@ def shape_rewards(
         congestion = float(obs[1])
         door_match = 0.0
         if action == 1:
-            match_start = 8
+            match_start = 9   # 2-stage: obs[8]=idle_outbound_doors, obs[9..]=door_matches
             door_matches = obs[match_start: match_start + num_doors]
             if len(door_matches) > 0:
                 door_match = float(door_matches.max())

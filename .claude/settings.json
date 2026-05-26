@@ -49,7 +49,12 @@
       "Bash(python3 rl/train_rl.py --episodes 2000 --lr 5e-4 --seed 42 --save-dir checkpoints_varied_dispatch)",
       "Bash(echo \"학습 백그라운드 시작 PID=$!\")",
       "Bash(kill 97814)",
-      "Bash(python3 train_varied_dispatch.py)"
+      "Bash(python3 train_varied_dispatch.py)",
+      "WebSearch",
+      "Bash(git checkout *)",
+      "Bash(echo \"PID: $!\")",
+      "Read(//private/tmp/**)",
+      "Bash(kill 18719)"
     ],
     "additionalDirectories": [
       "/Users/yskim/Desktop/05. 물류 ai/lcl_gym/checkpoints"
