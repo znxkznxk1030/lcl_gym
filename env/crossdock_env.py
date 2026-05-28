@@ -20,9 +20,9 @@ from .entities import Lane, Door, Truck, OutboundTruck, OutboundDoor
 DEFAULT_CONFIG = {
     "num_lanes": 5,
     "num_inbound_doors": 3,
-    "num_outbound_doors": 5,           # Stage 2 아웃바운드 도크 수
+    "num_outbound_doors": 8,           # Stage 2 아웃바운드 도크 수
     "buffer_capacity": 1e9,            # 사실상 무한 버퍼 (제약 없음)
-    "episode_length": 100,
+    "episode_length": 10000,            # 안전 상한 (실제 종료는 all_dispatched 조건)
     "truck_arrival_prob": 0.4,
     "max_door_processing": 10,
     "inbound_min_dest": 2,
@@ -44,6 +44,7 @@ DEFAULT_CONFIG = {
     "top_k_trucks": 15,
     # 스케줄 기반 입고
     "use_scheduled_arrivals": True,
+    "all_trucks_at_start": False,       # True: 모든 트럭을 t=0에 waiting_trucks에 일괄 배치
     "arrival_count_min": 50,
     "arrival_count_max": 70,
     "arrival_pattern": "clustered",
@@ -104,6 +105,7 @@ class CrossDockEnv:
         self.reward_alpha: float         = cfg["reward_alpha"]
         self.reward_beta: float          = cfg["reward_beta"]
         self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
+        self.all_trucks_at_start: bool   = cfg["all_trucks_at_start"]
         self.arrival_count_min: int      = cfg["arrival_count_min"]
         self.arrival_count_max: int      = cfg["arrival_count_max"]
         self.arrival_pattern: str        = cfg["arrival_pattern"]
@@ -155,9 +157,17 @@ class CrossDockEnv:
         self.t = 0
         self.buffer = 0.0
         self.waiting_trucks = []
-        self.arrival_schedule = (
-            self._build_arrival_schedule() if self.use_scheduled_arrivals else []
-        )
+        if self.all_trucks_at_start:
+            # 모든 트럭을 t=0에 waiting_trucks에 일괄 배치 (도착 스케줄 없음)
+            trucks = self._build_arrival_schedule()
+            for truck in trucks:
+                truck.arrival_time = 0
+            self.waiting_trucks = trucks
+            self.arrival_schedule = []
+        else:
+            self.arrival_schedule = (
+                self._build_arrival_schedule() if self.use_scheduled_arrivals else []
+            )
 
         self.lanes = [Lane(lane_id=k) for k in range(self.num_lanes)]
         self.doors = [Door(door_id=i) for i in range(self.num_inbound_doors)]
@@ -243,7 +253,14 @@ class CrossDockEnv:
         self._sync_outbound_trucks_compat()
 
         self.t += 1
-        done = self.t >= self.episode_length
+        all_dispatched = (
+            not self.waiting_trucks
+            and not self.arrival_schedule
+            and not any(d.is_busy for d in self.doors)
+            and all(lane.queue_volume == 0 for lane in self.lanes)
+            and not any(od.is_busy for od in self.outbound_doors)
+        )
+        done = all_dispatched or self.t >= self.episode_length
         obs = self.get_obs()
         info = {"t": self.t, "metrics": self.metrics.copy()} if done else {"t": self.t}
         return obs, rewards, done, info
@@ -370,6 +387,15 @@ class CrossDockEnv:
         """
         idle_ods = [od for od in self.outbound_doors if not od.is_busy]
         if not idle_ods:
+            return
+
+        # 더 이상 유입될 화물이 없고 레인도 비었으면 재할당 중단 → all_dispatched 수렴
+        no_more_incoming = (
+            not self.waiting_trucks
+            and not self.arrival_schedule
+            and not any(d.is_busy for d in self.doors)
+        )
+        if no_more_incoming and all(lane.queue_volume == 0 for lane in self.lanes):
             return
 
         # 현재 로딩 중인 목적지 집합
@@ -592,19 +618,8 @@ class CrossDockEnv:
         depart_info: List[Optional[dict]],
         overflow: int,
     ) -> List[float]:
-        departures    = [d for d in depart_info if d is not None]
-        total_loaded  = sum(d["loaded"] for d in departures)
-        empty_departs = sum(1 for d in departures if d["empty"])
-
-        r_team = total_loaded - 2.0 * empty_departs
-
-        rewards = []
-        for k, lane in enumerate(self.lanes):
-            local_loaded = sum(d["loaded"] for d in departures if d["dest"] == k)
-            r_local  = local_loaded - 0.1 * lane.congestion
-            r_final  = self.reward_alpha * r_team + self.reward_beta * r_local
-            rewards.append(float(r_final))
-        return rewards
+        # tick 최소화 목표: 매 스텝 -1 패널티 (누적 보상 = -총 tick 수)
+        return [-1.0] * self.num_lanes
 
     def _apply_disruptions(self) -> None:
         # 1) 도어 고장

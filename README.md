@@ -6,42 +6,50 @@
 
 ---
 
-## 환경 구조
+## 환경 구조 (2-Stage)
+
+### 스테이지 구분
+
+```
+[Stage 1] 인바운드 하역
+  Inbound Truck → Inbound Door (8개) → Buffer (무제한)
+
+[Stage 2] 아웃바운드 동적 배정
+  Buffer → Lane Queue (5개) → Outbound Door (8개) → Outbound Truck
+```
+
+- **Stage 1**: 에이전트가 인바운드 트럭 도어 배정을 결정 (action 0/1)
+- **Stage 2**: 매 스텝 레인 큐 volume 기준으로 아웃바운드 도어에 동적 배정 (그리디, 중복 배정 없음)
 
 ### 주요 엔티티
 
 | 엔티티 | 설명 |
 |---|---|
-| `Truck` (Inbound) | **2~3개 목적지 화물이 혼재**된 인바운드 트럭. 미리 스케줄된 도착 시간에 등장 |
-| `OutboundTruck` | **목적지 1개 전용** 아웃바운드 트럭. 레인 큐에서 화물을 싣고 레인별 다른 타이머로 출발 |
+| `Truck` (Inbound) | **2~3개 목적지 화물이 혼재**된 인바운드 트럭. 스케줄된 도착 시간에 등장 |
+| `OutboundTruck` | **목적지 1개 전용** 아웃바운드 트럭. 아웃바운드 도어에서 화물 적재 후 타이머 만료 시 출발 |
 | `Door` | 인바운드 트럭이 하역하는 입고 도어 (처리 중엔 점유됨) |
 | `Lane` | 목적지별 레인. 각각 하나의 **에이전트**에 해당 |
-| `Buffer` | 화물이 레인으로 이동하기 전 대기하는 공유 스테이징 공간 |
+| `Buffer` | 화물이 레인으로 이동하기 전 대기하는 공유 스테이징 공간 **(용량 무제한)** |
 
-### 기본 설정값
+### 기본 설정값 (8-Door 2-Stage)
 
 ```yaml
 num_lanes: 5                  # 에이전트 수
-num_inbound_doors: 3          # 입고 도어 수
-buffer_capacity: 60           # 버퍼 최대 용량 (CBM)
+num_inbound_doors: 8          # 입고 도어 수
+num_outbound_doors: 8         # 출고 도어 수
+buffer_capacity: 1e9          # 버퍼 용량 (사실상 무제한)
 episode_length: 100           # 에피소드 길이 (타임스텝)
-max_door_processing: 10       # 도어 처리 최대 소요 시간 (1~10 균등 랜덤)
 
 # 스케줄 기반 입고
-arrival_count_min: 50         # 에피소드당 최소 인바운드 트럭 수
-arrival_count_max: 70         # 에피소드당 최대 인바운드 트럭 수
-arrival_pattern: "clustered"  # 배치(batch) 도착 패턴 ("uniform" | "clustered")
-arrival_cluster_count: 4      # 배치 수 (에피소드 전반에 균등 배치)
+arrival_count_min: 50
+arrival_count_max: 70
+arrival_pattern: "clustered"
+arrival_cluster_count: 4
 
-# 스케줄 기반 출고 (레인마다 독립 타이머)
-dispatch_interval_min: 12     # 아웃바운드 출발 주기 최솟값 (스텝)
-dispatch_interval_max: 28     # 아웃바운드 출발 주기 최댓값 (스텝)
-
-inbound_min_dest: 2           # 인바운드 트럭 최소 목적지 수
-inbound_max_dest: 3           # 인바운드 트럭 최대 목적지 수
-inbound_vol_min: 0.5          # 목적지당 최소 화물량 (CBM)
-inbound_vol_max: 5.0          # 목적지당 최대 화물량 (CBM)
-outbound_capacity: 15.0       # 아웃바운드 트럭 1대 최대 적재량 (CBM)
+# 아웃바운드 출발 타이머
+dispatch_interval_min: 12
+dispatch_interval_max: 28
+outbound_capacity: 15.0       # 아웃바운드 트럭 최대 적재량 (CBM)
 ```
 
 ---
@@ -57,52 +65,34 @@ outbound_capacity: 15.0       # 아웃바운드 트럭 1대 최대 적재량 (CB
 1 → 트럭 요청 — 유휴 도어에 배정 요청
 ```
 
-여러 에이전트가 동시에 `1`을 선택하면, **긴급도(아웃바운드 출발 임박 순) 기준**으로 유휴 도어 수만큼 병렬 배정됩니다. 도어 3개가 유휴 상태이고 3개 이상의 레인이 요청하면 **3개 도어 동시 처리**가 가능합니다.
+여러 에이전트가 동시에 `1`을 선택하면 **긴급도(아웃바운드 출발 임박 순) 기준**으로 유휴 도어 수만큼 병렬 배정됩니다.
 
-### 관측 벡터 (Observation, 에이전트별, 크기 = 8 + num_doors)
+### 관측 벡터 (크기 = 9)
 
 ```python
 obs = [
     lane_queue,              # 0: 레인 현재 화물 적재량 (CBM)
     lane_congestion,         # 1: 혼잡도 (0~1 정규화)
-    outbound_fill_rate,      # 2: 아웃바운드 트럭 현재 탑재율 (0~1)
+    outbound_fill_rate,      # 2: 아웃바운드 도어 현재 탑재율 (0~1)
     outbound_departure_in,   # 3: 아웃바운드 출발까지 남은 타임스텝
-    buffer_remaining,        # 4: 버퍼 여유 용량 (CBM)
-    idle_inbound_doors,      # 5: 현재 유휴 도어 수
+    buffer,                  # 4: 버퍼 현재 적재량 (CBM, 무제한 환경)
+    idle_inbound_doors,      # 5: 현재 유휴 인바운드 도어 수
     waiting_trucks,          # 6: 도착해서 대기 중인 트럭 수
     scheduled_trucks,        # 7: 아직 도착 전 스케줄 트럭 수
-    door_match_0,            # 8: 대기 트럭 중 내 레인 화물 최대 매칭도
-    door_match_1,            # 9: (도어 1)
-    door_match_2,            # 10: (도어 2)
+    idle_outbound_doors,     # 8: 현재 유휴 아웃바운드 도어 수
 ]
 ```
-
-> `door_match_i`: 유휴 도어 i에 대해, 대기 트럭 중 이 레인으로 오는 화물 비율의 최댓값. 도어가 점유 중이면 0.
 
 ### 보상 구조
 
 ```python
-R_team  = 이번_스텝_출발_화물량 - 0.5 × 버퍼_초과 - 2.0 × 빈_출발
+R_team  = 이번_스텝_출발_화물량 - 2.0 × 빈_출발
 R_local = 내_레인_출발_화물량 - 0.1 × 혼잡도
 
 R_final = 0.7 × R_team + 0.3 × R_local   # 팀:개인 = 7:3
 ```
 
-> `빈_출발`: 탑재율(fill_rate) < 10%인 채로 출발한 아웃바운드 트럭
-
-### 스텝 실행 순서
-
-```
-1. 스케줄된 트럭 중 arrival_time ≤ t인 트럭 대기열 이동
-2. 도어 상태 갱신 (처리 완료된 트럭 방출)
-3. 방출된 트럭 화물 → 버퍼 → 레인 이동
-   ※ 버퍼 포화 시 트럭을 소실하지 않고 waiting_trucks[0]으로 복귀
-4. 대기열에 새 트럭 추가
-5. 에이전트 행동 수집 → 긴급도 순 정렬 → 유휴 도어에 병렬 배정
-5.5. 레인 큐 → 아웃바운드 트럭 점진 적재 (매 스텝)
-6. 아웃바운드 트럭 출발 처리 (타이머 만료 시)
-7. 보상 계산
-```
+> `빈_출발`: 탑재율(fill_rate) < 10%인 채로 출발한 아웃바운드 트럭 (overflow 패널티 없음)
 
 ---
 
@@ -110,98 +100,218 @@ R_final = 0.7 × R_team + 0.3 × R_local   # 팀:개인 = 7:3
 
 ```
 lcl_gym/
-├── env/                          # 시뮬레이션 환경
-│   ├── __init__.py
+├── env/
 │   ├── entities.py               # Truck, OutboundTruck, Door, Lane 데이터 클래스
-│   ├── crossdock_env.py          # CrossDockEnv 메인 환경
+│   ├── crossdock_env.py          # CrossDockEnv 메인 환경 (2-Stage)
 │   └── policies.py               # 베이스라인 정책 4종
 │
-├── rl/                           # 강화학습
-│   ├── __init__.py
+├── rl/
 │   ├── networks.py               # numpy 2층 MLP (forward, Adam 역전파)
 │   ├── replay_buffer.py          # 경험 리플레이 버퍼
 │   ├── rl_policy.py              # QLearningPolicy (epsilon-greedy)
-│   ├── train_rl.py               # DQN 학습 루프 + 체크포인트 저장
-│   └── evaluate_rl.py            # 학습 곡선 요약 + 베이스라인 비교
+│   └── train_rl.py               # DQN 학습 루프 + 체크포인트 저장
 │
-├── viz/                          # 3D 시각화 도구
-│   ├── export_simulation.py      # 에피소드 → JSON 익스포트 스크립트
+├── mip/
+│   └── solve_mip.py              # pulp/CBC 기반 매 스텝 MILP 배정
+│
+├── ga/
+│   └── ga_policy.py              # 유전 알고리즘 정책 (6-gene chromosome)
+│
+├── viz/
+│   ├── export_simulation.py      # 에피소드 → JSON 익스포트
 │   ├── index.html                # Three.js 기반 3D 뷰어
-│   └── simulation_data.json      # 기본 출력 JSON (export 결과)
+│   ├── index2d.html              # Canvas 기반 2D 뷰어
+│   ├── sim_2stage_random.json    # 7개 정책별 시뮬레이션 JSON
+│   ├── sim_2stage_fifo.json
+│   ├── sim_2stage_greedy.json
+│   ├── sim_2stage_heuristic.json
+│   ├── sim_2stage_mip.json
+│   ├── sim_2stage_rl.json
+│   ├── sim_2stage_ga.json
+│   └── benchmark_2stage_8door.json  # 20 에피소드 집계 벤치마크
 │
-├── mip/                          # MILP 최적화 솔버
-│   └── solve_mip.py              # pulp/CBC 기반 매 스텝 MILP 배정 + JSON 저장
-│                                 # (돌발사항 시나리오 포함)
+├── checkpoints_2stage_8door/
+│   └── weights_final.npz         # RL 학습 가중치 (2000 에피소드)
 │
-├── run_simulation.py             # 베이스라인 벤치마크 실행
-├── checkpoints/                  # 학습 가중치 및 로그 저장
-└── README.md
+└── run_all_experiments_2stage.py # 전체 실험 파이프라인 (학습 + 벤치마크)
 ```
 
 ---
 
-## 3D 시각화 (viz/)
+## 정책 설명
 
-시뮬레이션 에피소드를 Three.js 기반 3D 뷰어로 재생할 수 있습니다.
+### 베이스라인 4종
 
-### 사용 순서
+| 정책 | 설명 |
+|---|---|
+| `RandomPolicy` | 매 스텝 50% 확률로 트럭 요청 |
+| `FIFOPolicy` | 대기 트럭과 유휴 도어가 있으면 항상 요청 |
+| `GreedyPolicy` | 내 레인으로 오는 화물이 있는 트럭이 있을 때 요청 |
+| `HeuristicPriorityPolicy` | 긴급도 + 매칭도 - 혼잡도 종합 점수가 임계값 이상일 때 요청 |
 
-**1단계 — JSON 생성**
+### MILP (Mixed Integer Linear Programming)
 
-```bash
-# greedy 정책으로 에피소드 실행 → viz/simulation_data.json 저장
-python viz/export_simulation.py
+매 스텝 `maximize Σ x_{j,i} · score_j` 를 CBC 솔버로 풀어 트럭-도어 배정을 최적화합니다.
 
-# 정책 / 시드 지정
-python viz/export_simulation.py --policy heuristic --seed 7
-python viz/export_simulation.py --policy rl
-python viz/export_simulation.py --policy random --output viz/sim_random.json
+- `score_j` = Σ_k v_{j,k} / (departure_timer_k + 1) — 긴급도 가중 화물량
+- 트럭·도어 각각 단일 배정 제약
+- 평균 ~25ms/스텝
 
-# MILP 최적화 정책 (pulp 필요: pip install pulp)
-python mip/solve_mip.py --seed 42 --output viz/sim_mip.json
+### RL (IQL + Parameter Sharing DQN)
+
+numpy 기반 2층 MLP를 5개 에이전트가 공유해 학습합니다.
+
+```
+입력(9) → Linear(64) → ReLU → Linear(2) → Q값 {Q_skip, Q_request}
 ```
 
-사용 가능한 정책: `greedy` / `fifo` / `random` / `heuristic` / `rl` / `mip`
+- **학습**: 2000 에피소드, lr=0.0005, γ=0.99, ε: 1.0→0.05
+- **Target Network**: 50 에피소드마다 동기화
+- **리플레이 버퍼**: 용량 10,000, 배치 64
+- 가중치 저장: `checkpoints_2stage_8door/weights_final.npz`
 
-돌발사항 시나리오별 JSON은 `viz/sim_mip_{baseline|door_failure|rush_truck|timer_shock}.json`에 저장됩니다.
+### GA (Genetic Algorithm)
 
-**2단계 — 브라우저에서 뷰어 열기**
+6개 유전자로 에이전트의 의사결정 임계값을 진화시킵니다.
+
+```
+gene[0] = queue_thresh      # 레인 큐 임계값
+gene[1] = congestion_thresh # 혼잡도 임계값
+gene[2] = fill_rate_thresh  # 탑재율 임계값
+gene[3] = timer_thresh      # 출발 타이머 임계값
+gene[4] = buf_thresh        # 버퍼 적재량 임계값
+gene[5] = idle_door_thresh  # 유휴 도어 임계값
+```
+
+- **설정**: POP=50, GEN=100, 평가 에피소드=8회 평균
+- 유전자 저장: `ga/best_genes_2stage.json`
+
+---
+
+## 실험 결과 (8-Door 2-Stage, 20 에피소드)
+
+### 환경 설정
+
+- 인바운드 도어: **8개**, 아웃바운드 도어: **8개**, 레인(에이전트): **5개**
+- 인바운드 트럭: 50~70대/에피소드 (clustered, 4 batch)
+- 버퍼 용량: **무제한** (overflow 없음)
+- RL: 2000 에피소드 학습 / GA: pop=50, gen=100
+
+### 처리량 · 탑재율 비교
+
+| 정책 | 처리량 (CBM) | 탑재율 (%) | 빈 출발 | 오버플로우 | In-Door 활용률 | Out-Door 활용률 |
+|---|---:|---:|---:|---:|---:|---:|
+| Random    | 345.1 ± 27.8 | 87.7 ± 4.9 | 2.4 ± 1.2 | 0 | 91.9% | 62.8% |
+| FIFO      | 337.2 ± 24.5 | 87.0 ± 5.2 | 2.5 ± 1.2 | 0 | 86.1% | 62.9% |
+| Greedy    | 335.9 ± 25.2 | 87.0 ± 5.3 | 2.5 ± 1.2 | 0 | 86.0% | 62.9% |
+| Heuristic | 339.4 ± 25.9 | 87.1 ± 5.1 | 2.5 ± 1.2 | 0 | 55.5% | 62.9% |
+| MILP      | 342.3 ± 24.2 | 87.4 ± 5.2 | 2.1 ± 1.2 | 0 | 81.6% | 62.9% |
+| **RL**    | **347.2 ± 40.7** | 87.3 ± 5.4 | 2.5 ± 1.2 | 0 | **89.8%** | 62.8% |
+| **GA**    | **349.4 ± 27.7** | **87.4 ± 5.2** | 2.5 ± 1.2 | 0 | 82.5% | 62.8% |
+
+> 오버플로우는 버퍼 무제한으로 모든 정책에서 0
+
+### 버퍼 상태 통계 (20 에피소드 평균)
+
+| 정책 | 탑재율 (mean ± std) | Buffer Peak (CBM) | Buffer Mean (CBM) |
+|---|---:|---:|---:|
+| Random    | 87.7% ± 4.9% | ~180 | ~82 |
+| FIFO      | 87.0% ± 5.2% | ~180 | ~80 |
+| Greedy    | 87.0% ± 5.3% | ~180 | ~80 |
+| Heuristic | 87.1% ± 5.1% | ~180 | ~80 |
+| MILP      | 87.4% ± 5.2% | ~180 | ~80 |
+| RL        | 87.3% ± 5.4% | ~180 | ~82 |
+| GA        | 87.4% ± 5.2% | ~180 | ~80 |
+
+> 버퍼 통계는 에피소드 내 시계열에서 추출 (viz JSON의 `buffer` 필드)
+
+### 단일 에피소드 최고 기록
+
+| 정책 | 처리량 (CBM) | 탑재율 |
+|---|---:|---:|
+| Random    | 353.0 | 90.5% |
+| FIFO      | 367.0 | 90.6% |
+| Greedy    | 367.0 | 90.6% |
+| Heuristic | 352.0 | 90.3% |
+| MILP      | 382.0 | 91.0% |
+| RL        | **397.0** | **91.3%** |
+| GA        | 367.0 | 90.6% |
+
+---
+
+## 아웃바운드 도어 수 비교: 5개 vs 8개
+
+| 지표 | nOD=5 | nOD=8 |
+|---|---:|---:|
+| 평균 처리량 (random) | ~335 CBM | ~345 CBM |
+| 평균 탑재율 | ~93% | ~87% |
+| Out-Door 활용률 | ~95% | ~63% |
+| 빈 출발 | ~1.0 | ~2.5 |
+
+- **nOD=8**: 출고 도어 수가 레인(5개)보다 많아 일부 도어가 미달 적재 출발 → 탑재율 하락
+- **nOD=5**: 도어=레인으로 1:1 매칭, 탑재율이 더 높으나 처리 병목 발생
+- 처리량 기준으로는 8개 도어가 소폭 유리 (+10 CBM)
+
+---
+
+## 2D 시각화 (viz/index2d.html)
+
+Canvas 기반 2D 뷰어로 에피소드 재생 및 정책별 비교가 가능합니다.
+
+### 뷰어 구성
+
+```
+┌──────────────────────────────────────────────────┐
+│ 헤더: 파일 선택 드롭다운 · Step · Policy         │
+├───────────────────┬──────────────────────────────┤
+│  HUD 패널         │  Canvas 2D 뷰포트             │
+│ · Throughput      │                               │
+│ · Fill Rate       │  [예정 트럭] (상단)           │
+│ · Buffer (CBM)    │  [인바운드 도어 8개]          │
+│ · Empty Dep       │  ────── BUFFER (무제한) ────  │
+│ · In/Out DoorUtil │  [레인 큐 5개]                │
+│                   │  [아웃바운드 도어 8개] (하단) │
+│                   │  [출고 트럭 8슬롯]            │
+├───────────────────┴──────────────────────────────┤
+│ Timeline: ◀ ▶ Play · 슬라이더                    │
+└──────────────────────────────────────────────────┘
+```
+
+### 드롭다운 정책 목록
+
+```
+2-Stage 8door
+  ├── 2stage-random
+  ├── 2stage-fifo
+  ├── 2stage-greedy
+  ├── 2stage-heuristic
+  ├── 2stage-mip
+  ├── 2stage-rl
+  └── 2stage-ga
+```
+
+### 실행 방법
+
+```bash
+open viz/index2d.html   # macOS
+```
+
+JSON 파일을 드롭다운에서 선택하거나 파일 열기로 불러옵니다.
+
+---
+
+## 3D 시각화 (viz/index.html)
+
+Three.js 기반 3D 뷰어입니다.
 
 ```bash
 open viz/index.html   # macOS
 ```
 
-JSON 파일을 파일 열기 버튼 또는 드래그 앤 드롭으로 불러옵니다.
-
-### 뷰어 화면 구성
-
-```
-┌────────────────────────────────────────┐
-│ Header: Policy · Seed · Steps          │
-├───────────────────┬────────────────────┤
-│ Step Info 패널    │   Metrics 패널     │
-│ - 현재 스텝       │ - 총 처리량        │
-│ - 버퍼 점유량     │ - 평균 탑재율      │
-│ - 대기 트럭 수    │ - 버퍼 오버플로우  │
-│ - 스케줄 트럭 수  │ - 도어 활용률      │
-├───────────────────┴────────────────────┤
-│          Three.js 3D 뷰포트            │
-│  [예정 트럭] → [대기] → [도어] → [버퍼]│
-│           → [레인 큐] → [아웃바운드]   │
-├────────────────────────────────────────┤
-│ Lanes 범례 (레인별 Q / 탑재% / 타이머) │
-├────────────────────────────────────────┤
-│ Timeline: ◀ ▶ Play · 슬라이더 · fps   │
-└────────────────────────────────────────┘
-```
-
-### 조작 단축키
-
 | 키 / 마우스 | 동작 |
 |---|---|
 | `Space` | 재생 / 일시정지 |
 | `←` / `→` | 이전 / 다음 스텝 |
-| `+` / `−` | 재생 속도 변경 |
 | 마우스 드래그 | 카메라 회전 |
 | 마우스 휠 | 줌 인 / 아웃 |
 
@@ -214,13 +324,21 @@ JSON 파일을 파일 열기 버튼 또는 드래그 앤 드롭으로 불러옵�
 ```bash
 python >= 3.8
 numpy
+pulp          # MILP 솔버
 ```
 
-### 베이스라인 정책 비교
+### 전체 실험 파이프라인
 
 ```bash
-python run_simulation.py
+# 베이스라인 + MILP + RL 학습 + GA 학습 → 벤치마크
+python run_all_experiments_2stage.py
 ```
+
+결과 파일:
+- `viz/sim_2stage_{policy}.json` — 각 정책 시뮬레이션 JSON (7개)
+- `viz/benchmark_2stage_8door.json` — 20 에피소드 집계 통계
+- `checkpoints_2stage_8door/weights_final.npz` — RL 가중치
+- `ga/best_genes_2stage.json` — GA 최적 유전자
 
 ### 환경 직접 사용
 
@@ -228,7 +346,8 @@ python run_simulation.py
 from env.crossdock_env import CrossDockEnv
 from env.policies import HeuristicPriorityPolicy
 
-env = CrossDockEnv(seed=42)
+cfg = {"num_inbound_doors": 8, "num_outbound_doors": 8}
+env = CrossDockEnv(config=cfg, seed=42)
 policies = [HeuristicPriorityPolicy() for _ in range(env.num_lanes)]
 
 obs = env.reset()
@@ -236,345 +355,9 @@ for t in range(env.episode_length):
     actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(env.num_lanes)]
     obs, rewards, done, info = env.step(actions)
     if done:
-        print(f"처리량: {info['metrics']['total_throughput']:.1f}")
+        print(f"처리량: {info['metrics']['total_throughput']:.1f} CBM")
         break
 ```
-
----
-
-## 베이스라인 정책 설명
-
-| 정책 | 설명 |
-|---|---|
-| `RandomPolicy` | 매 스텝 50% 확률로 트럭 요청 |
-| `FIFOPolicy` | 대기 트럭과 유휴 도어가 있으면 항상 요청 |
-| `GreedyPolicy` | 내 레인으로 오는 화물이 있는 트럭이 있을 때 요청 |
-| `HeuristicPriorityPolicy` | 긴급도 + 매칭도 - 혼잡도 종합 점수가 임계값 이상일 때 요청 |
-
----
-
-## RL 학습 (IQL + Parameter Sharing DQN)
-
-numpy만으로 구현된 DQN 기반 MARL 학습 파이프라인입니다.
-
-### 알고리즘 구조
-
-**IQL (Independent Q-Learning) + Parameter Sharing**
-
-5개 에이전트가 동일한 가중치(NumpyMLP)를 공유해 학습합니다.
-
-```
-에이전트 1 ──┐
-에이전트 2 ──┤
-에이전트 3 ──┼──→ 공유 NumpyMLP → Q(obs, action) → {Q_skip, Q_request}
-에이전트 4 ──┤
-에이전트 5 ──┘
-```
-
-- 5개 에이전트의 경험이 동시에 같은 네트워크를 업데이트 → 데이터 효율 5배
-- 평가 시에는 각 에이전트가 독립적으로 행동 (분산 실행)
-
-### 네트워크 구조
-
-```
-입력(11) → Linear(64) → ReLU → Linear(2) → Q값 {Q_skip, Q_request}
-```
-
-- 역전파: 선택한 action 위치만 TD error로 gradient 계산
-- 옵티마이저: Adam (β1=0.9, β2=0.999)
-- Target Network: 50 에피소드마다 동기화
-
-### Reward Shaping
-
-```python
-R_shaped = R_env
-         + 1.0 × door_match    # 요청 시 대기 트럭의 최대 매칭도 보너스
-         - 0.1 × congestion    # 혼잡 억제
-```
-
-### 학습 실행
-
-```bash
-python rl/train_rl.py
-python rl/train_rl.py --episodes 2000 --lr 5e-4
-python rl/train_rl.py --no-share   # 에이전트별 독립 가중치
-```
-
----
-
-## 정책 비교 결과 (단일 에피소드, seed=42)
-
-### MILP 포함 전 정책 비교
-
-| 정책 | 처리량 (CBM) | 평균 탑재율 | 오버플로우 | 빈 출발 | 출발 횟수 |
-|---|---:|---:|---:|---:|---:|
-| FIFO | 181.7 | 57.7% | 0 | 3 | 21 |
-| Greedy | 181.7 | 57.7% | 0 | 3 | 21 |
-| Heuristic | 181.7 | 57.7% | 0 | 3 | 21 |
-| RL (DQN) | 188.4 | 59.8% | 0 | 4 | 21 |
-| **MILP (CBC)** | **188.2** | **57.0%** | **0** | **3** | **22** |
-
-> **MILP 공식화**: 매 스텝 `maximize Σ x_{j,i}·score_j` (score = Σ_k v_{j,k}/(departure_timer_k+1)),
-> 트럭/도어 단일 배정 + 버퍼 용량 제약. 풀이기: pulp/CBC, 평균 ~91ms/호출.
-
-**해석**
-- MILP와 RL(DQN)이 처리량 면에서 Heuristic 대비 **+6.5 CBM (+3.6%)** 우위
-- MILP는 아웃바운드 출발 횟수가 1회 더 많아 더 많은 적재 기회를 확보
-- RL은 탑재율(59.8%)이 가장 높지만 빈 출발(4회)도 가장 많음
-
----
-
-## 돌발사항 (Disruptions)
-
-MILP가 풀기 어려운 동적 환경을 만들기 위해 세 가지 돌발사항을 구현했습니다.
-각 돌발사항은 독립적으로 활성화할 수 있으며, `enable_disruptions=True`일 때 작동합니다.
-
-### 돌발사항 종류
-
-| 유형 | 설정 키 | 발생 확률 | MIP에 미치는 영향 |
-|------|---------|-----------|-----------------|
-| **도어 고장** `door_failure` | `disruption_door_failure` | 스텝당 1.5% | 처리 용량 감소 → 용량 제약 충돌 / 처리 중 트럭 대기열 복귀 |
-| **긴급 트럭** `rush_truck` | `disruption_rush_truck` | 스텝당 2.5% | 전 레인 고용량 트럭 돌발 삽입 → urgency 가중치 급변 |
-| **타이머 쇼크** `timer_shock` | `disruption_timer_shock` | 레인·스텝당 2.5% | 출발 타이머 강제 단축(2~4스텝) → 목적함수 계수 급변 |
-
-### 돌발사항 파라미터 (DEFAULT_CONFIG)
-
-```yaml
-# 도어 고장
-disruption_door_failure_prob: 0.015
-disruption_door_failure_duration_min: 5   # 고장 지속 스텝
-disruption_door_failure_duration_max: 12
-
-# 긴급 트럭 (전 레인 화물 혼재, 대기열 선두 삽입)
-disruption_rush_truck_prob: 0.025
-disruption_rush_volume_min: 6.0           # 레인당 화물량 (CBM)
-disruption_rush_volume_max: 12.0
-
-# 타이머 쇼크 (아웃바운드 출발 타이머 강제 단축)
-disruption_timer_shock_prob: 0.025
-disruption_timer_shock_min: 2
-disruption_timer_shock_max: 4
-```
-
-### MILP의 돌발 대응 전략
-
-- **도어 고장**: MIP가 `is_failed=True` 도어를 자동으로 제외 → 남은 도어로 재최적화
-- **긴급 트럭**: 긴급 트럭 점수에 **3× 가중치** 부여 → 우선 배정
-- **타이머 쇼크**: 출발 임박 레인 urgency(1 / timer + 1)가 급등 → 자동으로 해당 레인 우선화
-
-### 돌발사항 실험 결과 (seed=42)
-
-#### 처리량 (CBM) — 높을수록 좋음
-
-| 시나리오 | 돌발 횟수 | MILP | RL (DQN) | 차이 (RL−MILP) |
-|---------|---------|-----:|--------:|---------------:|
-| Baseline | 0 | 188.2 | 188.4 | +0.2 |
-| Door Failure | 2 | 210.2 | **219.3** | **+9.1** |
-| Rush Truck | 2 | 253.4 | **269.8** | **+16.4** |
-| Timer Shock | 13~17 | 220.6 | **224.7** | **+4.1** |
-
-#### 평균 탑재율 — 높을수록 좋음
-
-| 시나리오 | MILP | RL (DQN) |
-|---------|-----:|--------:|
-| Baseline | 57.0% | **59.8%** |
-| Door Failure | 58.4% | **63.6%** |
-| Rush Truck | 76.8% | **81.8%** |
-| Timer Shock | 47.4% | 46.8% |
-
-#### 빈 출발 횟수 — 낮을수록 좋음
-
-| 시나리오 | MILP | RL (DQN) |
-|---------|-----:|--------:|
-| Baseline | 3 | 4 |
-| Door Failure | 3 | **2** |
-| Rush Truck | 3 | **1** |
-| Timer Shock | 5 | 6 |
-
-**분석**
-
-- **도어 고장**: MILP는 고장 도어를 즉시 제외하고 재배정하지만 RL이 처리량·탑재율·빈출발 모든 지표에서 우위. 학습된 정책이 도어 수 감소 상황을 암묵적으로 대응하는 것으로 보임.
-- **긴급 트럭**: RL이 처리량 +16.4 CBM, 탑재율 +5%p로 가장 큰 차이. MILP는 3× 가중치로 긴급 트럭을 우선하지만, RL은 door_match 관측값을 통해 자연스럽게 높은 화물 매칭도를 포착함.
-- **타이머 쇼크**: 두 정책 모두 가장 어려워하는 시나리오. 출발 횟수가 31~32회로 급증하고 탑재율이 47% 이하로 추락. MILP는 urgency 재계산으로 빈 출발(5회)을 억제하나, RL은 빈 출발이 6회로 더 많음. **이 시나리오에서만 MILP가 유리**.
-- **전체 경향**: RL이 돌발 환경에서 전반적으로 강인(robust)함. MILP는 타이머 쇼크처럼 목적함수 계수가 격렬하게 변하는 상황에서 상대적으로 취약.
-
----
-
-### 도어 수 확장 실험: 3개 → 8개, 트럭 비례 증가 (seed=42)
-
-도어를 8개로 늘리고 **트럭 입고 수도 8/3배(133~187대)로 비례 증가**시켜 도어 부하를 동일하게 유지한 실험입니다.
-
-> **RL 한계**: 체크포인트는 3도어·50~70대 환경에서 학습(obs_size=11, n_actions=2). 8도어 환경에서 obs[:11]만 사용하지만, **트럭 수 분포 완전 이탈**로 정책이 항상 action=0(요청 안 함)을 출력 → 처리량 0.
-
-#### 처리량 (CBM) — 트럭 133~187대
-
-| 시나리오 | 돌발 횟수 | MILP | RL (DQN) |
-|---------|---------|-----:|--------:|
-| Baseline | 0 | **346.9** | 0.0 (완전 실패) |
-| Door Failure | 1 | **327.4** | 0.0 |
-| Rush Truck | 3 | **283.8** | 0.0 |
-| Timer Shock | 6 | **373.6** | 0.0 |
-
-#### MILP 단독 지표
-
-| 시나리오 | 처리량 | 탑재율 | 빈 출발 | 출발 횟수 | MIP 평균 ms |
-|---------|-----:|-----:|-------:|--------:|----------:|
-| Baseline | 346.9 | 88.9% | 2 | 26 | 28.2 |
-| Door Failure | 327.4 | 90.9% | 1 | 24 | 23.6 |
-| Rush Truck | 283.8 | 86.0% | 2 | 22 | 25.6 |
-| Timer Shock | 373.6 | 89.0% | 1 | 28 | 26.0 |
-
-**실험 A — 3도어 학습 체크포인트 그대로 사용**
-
-| 시나리오 | MILP | RL (3도어 체크포인트) |
-|---------|-----:|-------------------:|
-| Baseline | 346.9 | **0.0** (완전 실패) |
-| Door Failure | 327.4 | **0.0** |
-| Rush Truck | 283.8 | **0.0** |
-| Timer Shock | 373.6 | **0.0** |
-
-> RL이 처리량 0 — obs 값이 학습 분포 완전 이탈로 항상 action=0(요청 안 함) 출력.
-
----
-
-**실험 B — 8도어·133~187대로 재학습 후 비교 (2000 에피소드)**
-
-| 시나리오 | 돌발 횟수 | MILP | RL (재학습) | 차이 (RL−MILP) |
-|---------|---------|-----:|----------:|---------------:|
-| Baseline | 0 | 346.9 | 320.4 | −26.5 |
-| Door Failure | 1 | 327.4 | **358.6** | **+31.2** |
-| Rush Truck | 1 | 283.8 | **338.5** | **+54.7** |
-| Timer Shock | 7 | 373.6 | **402.1** | **+28.5** |
-
-#### 탑재율 / 빈 출발
-
-| 시나리오 | MILP 탑재율 | RL 탑재율 | MILP 빈출발 | RL 빈출발 |
-|---------|----------:|--------:|----------:|--------:|
-| Baseline | **88.9%** | 85.4% | 2 | **1** |
-| Door Failure | **90.9%** | 85.4% | **1** | **1** |
-| Rush Truck | 86.0% | **86.8%** | 2 | **1** |
-| Timer Shock | 89.0% | **89.4%** | 1 | **0** |
-
-**분석**
-
-- **Baseline**: MILP가 처리량 +26.5 CBM 우위. 확정적 최적화가 규칙적 환경에서 유리.
-- **돌발 3종**: 재학습된 RL이 MILP를 처리량에서 역전(+28~+55 CBM). 특히 타이머 쇼크에서 RL이 빈 출발 **0회**로 완전 억제 — MILP(1회) 대비 우위.
-- **Rush Truck**: 재학습 RL이 가장 큰 차이(+54.7 CBM). door_match 관측값으로 고화물 트럭을 자연스럽게 우선처리하는 방식이 3× 가중치 MILP보다 실효성이 높음.
-- **핵심 시사점**:
-  - MILP는 환경 변화에 **재설정 없이 즉시 적응**하지만 돌발 환경 대응력은 학습 기반 정책에 뒤짐
-  - RL은 **재학습 비용이 발생**하지만, 동일 환경에서 충분히 학습되면 돌발 상황에서 MILP를 능가
-  - 두 접근법의 장단점은 **환경 안정성**과 **재학습 가능 여부**에 따라 결정됨
-
----
-
-## 환경 개선: 버퍼 초과 시 트럭 대기열 복귀 (2026-05-09)
-
-### 변경 내용
-
-기존에는 버퍼(60 CBM)가 꽉 찼을 때 하역 완료된 트럭의 화물이 **소실**되었습니다.
-
-```
-[기존] 도어 처리 완료 → 버퍼 포화 → 화물 소실 (overflow 카운트)
-[변경] 도어 처리 완료 → 버퍼 포화 → 트럭을 waiting_trucks[0]에 복귀
-                                     → 버퍼 여유 생기면 재배정 → 정상 처리
-```
-
-실제 크로스독에서 트럭을 야드로 되돌려 보내는 것과 동일한 방식입니다. 화물은 보존되지만 **도어 재처리 시간만큼 지연 비용**이 발생합니다.
-
-> `overflow_count`는 이제 완전 소실이 아닌 **부분 적재 실패**(버퍼에 일부만 들어간 경우)만 카운트합니다.
-
-### 재실험 결과 (8도어, 133~187대, seed=42, RL 재학습 2000 에피소드)
-
-#### 처리량 (CBM) — 높을수록 좋음
-
-| 시나리오 | 돌발 횟수 | MILP | RL (재학습) | 차이 (RL−MILP) |
-|---------|---------|-----:|----------:|---------------:|
-| Baseline | 0 | 339.4 | **365.8** | **+26.4** |
-| Door Failure | 2 | 324.5 | **364.4** | **+39.9** |
-| Rush Truck | 1~3 | 290.9 | **334.0** | **+43.1** |
-| Timer Shock | 6~7 | 376.2 | 339.2 | −37.0 |
-| All Disruptions | 7~9 | 343.5 | **364.9** | **+21.4** |
-
-#### 평균 탑재율 — 높을수록 좋음
-
-| 시나리오 | MILP | RL |
-|---------|-----:|---:|
-| Baseline | 87.0% | **90.3%** |
-| Door Failure | **90.1%** | 86.8% |
-| Rush Truck | 88.2% | 82.5% |
-| Timer Shock | **89.6%** | 87.0% |
-| All Disruptions | 81.8% | **86.9%** |
-
-#### 빈 출발 / 오버플로우 — 낮을수록 좋음
-
-| 시나리오 | MILP 빈출발 | RL 빈출발 | MILP 오버플로우 | RL 오버플로우 |
-|---------|----------:|--------:|---------------:|-------------:|
-| Baseline | 2 | **1** | 31 | **20** |
-| Door Failure | **1** | **1** | 32 | 53 |
-| Rush Truck | **1** | **1** | 28 | 42 |
-| Timer Shock | **1** | **0** | **25** | 32 |
-| All Disruptions | 2 | **0** | 35 | **29** |
-
-### 분석
-
-- **Baseline**: 버퍼 복귀 로직 도입 후 RL이 처리량에서 MILP를 역전(+26.4 CBM). 트럭이 소실되지 않아 화물 보존 효과가 RL 학습에 반영됨.
-- **Rush Truck**: RL이 +43.1 CBM으로 가장 큰 차이. 단, RL의 오버플로우(42)가 MILP(28)보다 높아 부분 적재 손실이 더 많이 발생함.
-- **Timer Shock**: 유일하게 MILP가 처리량(+37 CBM)과 탑재율에서 우위. 급격한 타이머 변화에 MILP의 매 스텝 재최적화가 효과적임.
-- **All Disruptions**: RL이 처리량·빈출발 모두에서 우위. 복합 돌발 환경에서 학습된 강인성이 드러남.
-- **오버플로우 해석**: 버퍼 복귀로 인해 대기 트럭이 많아지면 도어 점유 경쟁이 증가 → 부분 적재(오버플로우) 발생 가능. MILP는 버퍼 제약을 명시적으로 모델링하므로 오버플로우가 낮게 유지됨.
-
----
-
-## 정책 비교 결과 (2026-04-28, 30 에피소드)
-
-### 환경 설정
-
-- 에피소드당 인바운드 트럭: **50~70대** (clustered 패턴, 4개 배치)
-- 아웃바운드 출발 주기: 레인별 독립 타이머 **12~28 스텝**
-- 인바운드 도어: 3개 / 에피소드 길이: 100 스텝
-
-### 결과
-
-| Policy | Throughput | AvgFillRate | Overflow | DoorUtil | DwellTime |
-|---|---:|---:|---:|---:|---:|
-| Random | 273.5 ± 25.5 | 73.6% ± 7.3% | 0.1 ± 0.6 | 90.6% | 12.8 |
-| FIFO | 253.8 ± 25.0 | 68.9% ± 6.1% | 0.0 ± 0.0 | 81.7% | 16.2 |
-| Greedy | 253.8 ± 25.0 | 68.9% ± 6.1% | 0.0 ± 0.0 | 81.7% | 16.2 |
-| Heuristic | 253.3 ± 23.7 | 68.8% ± 6.1% | 0.0 ± 0.0 | 81.6% | 16.3 |
-| **RL (DQN)** | **246.8 ± 19.0** | **68.0% ± 6.6%** | **0.0 ± 0.0** | **80.5%** | **18.3** |
-
-> RL 학습: 2000 에피소드, lr=1e-3, shared weights, seed=42
-
-### 분석
-
-**RL vs Heuristic**
-
-| 지표 | Heuristic | RL (DQN) | 차이 |
-|---|---:|---:|---:|
-| Throughput | 253.3 | 246.8 | **-6.5 (-2.6%)** |
-| AvgFillRate | 68.8% | 68.0% | -0.8%p |
-| Overflow | 0.0 | 0.0 | 동일 |
-| DoorUtil | 81.6% | 80.5% | -1.1%p |
-| DwellTime | 16.3 | 18.3 | +2.0 스텝 |
-
-RL은 현재 Heuristic 대비 처리량이 소폭 낮고 체류 시간이 길어요. 아직 수렴이 불완전한 상태로, 2000 에피소드로는 충분하지 않을 수 있습니다.
-
-**Random이 FIFO/Greedy/Heuristic보다 처리량이 높은 이유**
-
-결정론적 정책(FIFO/Greedy)은 5개 레인이 모두 동시에 요청하거나 동시에 스킵합니다. 이로 인해 긴급도가 낮은 레인이 반복적으로 배정 기회를 잃어 **부하 불균형**이 발생합니다. Random은 각 레인이 50% 확률로 독립 결정하므로 어떤 스텝에서도 다양한 레인 조합이 요청하게 되어 도어 이용률이 더 높아집니다 (81% → 90%).
-
-**현재 MARL 과제**
-
-파라미터 공유(shared weights) 구조에서 5개 에이전트가 동일 관측을 보면 동일한 행동을 냅니다. **에이전트 간 협력 (서로 다른 타이밍에 요청)** 을 학습하려면 레인 ID 임베딩 추가 또는 QMIX 같은 중앙집중식 학습 방식이 필요합니다.
-
-### 개선 방향
-
-| 방향 | 기대 효과 |
-|---|---|
-| 관측에 레인 ID one-hot 추가 | 에이전트 간 행동 다양화 → 도어 이용률 개선 |
-| 에피소드 수 증가 (5000+) | RL 수렴 개선 |
-| QMIX / MAPPO | 팀 보상 분해로 협력 학습 |
-| TorchMLP 교체 | 더 큰 네트워크, GPU 활용 가능 |
 
 ---
 
@@ -583,10 +366,8 @@ RL은 현재 Heuristic 대비 처리량이 소폭 낮고 체류 시간이 길어
 | 메트릭 | 설명 | 방향 |
 |---|---|---|
 | `total_throughput` | 아웃바운드에 탑재된 총 화물량 (CBM) | ↑ |
-| `total_fill_rate` | 아웃바운드 출발 탑재율 합산 | ↑ |
+| `avg_fill_rate` | 출발 아웃바운드 트럭 평균 탑재율 | ↑ |
 | `outbound_departures` | 총 아웃바운드 출발 횟수 | — |
 | `empty_departures` | 탑재율 10% 미만으로 출발한 횟수 | ↓ |
-| `buffer_overflow_count` | 버퍼 용량 초과 발생 횟수 | ↓ |
+| `door_utilization` | 인바운드 도어 평균 점유율 | ↑ |
 | `avg_dwell_time` | 트럭 도착 ~ 화물 처리까지 평균 대기 시간 | ↓ |
-| `door_utilization` | 도어 평균 점유율 (0~1) | ↑ |
-| `avg_fill_rate` | 출발 아웃바운드 트럭 평균 탑재율 | ↑ |

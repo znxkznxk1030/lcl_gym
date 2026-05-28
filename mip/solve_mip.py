@@ -70,15 +70,12 @@ def solve_assignment(
     n_t = len(trucks)
     n_d = len(idle_door_indices)
 
-    # urgency 가중 점수 계산 (2-stage: outbound_trucks 는 loading_timer 로 동기화됨)
-    # 긴급 트럭은 3배 가중
-    RUSH_MULTIPLIER = 3.0
+    # tick 최소화 목표: 총 화물량 기준으로 고부피 트럭 우선 배정 → 큐 빠른 소진
+    # 긴급 트럭은 2배 가중 (빠른 처리로 병목 제거)
+    RUSH_MULTIPLIER = 2.0
     scores = []
     for truck in trucks:
-        s = sum(
-            vol / (outbound_trucks[lane_id].departure_timer + 1)
-            for lane_id, vol in truck.shipments.items()
-        )
+        s = float(truck.total_volume())
         if getattr(truck, "is_rush", False):
             s *= RUSH_MULTIPLIER
         scores.append(s)

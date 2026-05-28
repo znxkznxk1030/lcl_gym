@@ -11,7 +11,9 @@
       "Bash(python ga/train_ga.py --pop 6 --gen 2 --eval 2 --bench-episodes 3)",
       "Bash(python -c ' *)",
       "Bash(python run_all_experiments_2stage.py)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(kill -0 16874)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

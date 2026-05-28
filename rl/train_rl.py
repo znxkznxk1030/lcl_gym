@@ -34,22 +34,20 @@ def shape_rewards(
     num_doors: int,
 ) -> list:
     """
-    환경 보상에 추가 shaping 적용 (환경 코드 수정 없음).
-
-    + 1.0 * door_match : 선택한 도어의 화물 매칭도가 높을수록 보너스
-    - 0.1 * congestion : 혼잡 억제
+    tick 최소화 shaping:
+    - 환경 기본 보상: -1/스텝
+    - 도어가 비어 있고 트럭이 있는데 요청하면 +1 (도어 가동률 극대화 장려)
+    - 도어가 비어 있고 트럭이 있는데 쉬면 추가 -1 (기회비용 패널티)
     """
     shaped = []
-    for k, (r, obs, action) in enumerate(zip(env_rewards, obs_list, actions)):
-        congestion = float(obs[1])
-        door_match = 0.0
-        if action == 1:
-            match_start = 9   # 2-stage: obs[8]=idle_outbound_doors, obs[9..]=door_matches
-            door_matches = obs[match_start: match_start + num_doors]
-            if len(door_matches) > 0:
-                door_match = float(door_matches.max())
-
-        bonus = 1.0 * door_match - 0.1 * congestion
+    for r, obs, action in zip(env_rewards, obs_list, actions):
+        idle_doors = float(obs[5])
+        waiting    = float(obs[6])
+        can_assign = idle_doors > 0 and waiting > 0
+        if can_assign:
+            bonus = 1.0 if action == 1 else -1.0
+        else:
+            bonus = 0.0
         shaped.append(r + bonus)
     return shaped
 
@@ -106,16 +104,15 @@ def train(
         for k in range(n_agents)
     ]
 
-    log_rewards    = []
-    log_throughput = []
-    log_overflow   = []
-    log_loss       = []
+    log_rewards = []
+    log_ticks   = []
+    log_loss    = []
 
     print(f"학습 시작 — episodes={num_episodes}, shared={shared_weights}, "
           f"lr={lr}, gamma={gamma}")
-    print(f"{'Episode':>8} {'AvgReward':>12} {'Throughput':>12} "
-          f"{'Overflow':>10} {'TDLoss':>10} {'Epsilon':>9}")
-    print("-" * 65)
+    print(f"{'Episode':>8} {'AvgReward':>12} {'AvgTicks':>10} "
+          f"{'TDLoss':>10} {'Epsilon':>9}")
+    print("-" * 55)
 
     for episode in range(num_episodes):
         env._seed = seed + episode
@@ -172,34 +169,29 @@ def train(
         if (episode + 1) % target_sync_interval == 0:
             target_net.copy_weights_from(shared_net if shared_weights else nets[0])
 
-        metrics = info.get("metrics", env.metrics)
         log_rewards.append(ep_reward)
-        log_throughput.append(metrics["total_throughput"])
-        log_overflow.append(metrics["buffer_overflow_count"])
+        log_ticks.append(float(env.t))
         log_loss.append(float(np.mean(ep_losses)) if ep_losses else 0.0)
 
         if (episode + 1) % log_interval == 0:
             w = 100
             print(f"{episode+1:>8} {np.mean(log_rewards[-w:]):>12.1f} "
-                  f"{np.mean(log_throughput[-w:]):>12.1f} "
-                  f"{np.mean(log_overflow[-w:]):>10.1f} "
+                  f"{np.mean(log_ticks[-w:]):>10.1f} "
                   f"{np.mean(log_loss[-w:]):>10.4f} {epsilon:>9.3f}")
             nets[0].save(os.path.join(save_dir, f"weights_ep{episode+1}"))
 
     final_path = os.path.join(save_dir, "weights_final")
     nets[0].save(final_path)
-    np.save(os.path.join(save_dir, "episode_rewards.npy"),  np.array(log_rewards))
-    np.save(os.path.join(save_dir, "throughput_log.npy"),   np.array(log_throughput))
-    np.save(os.path.join(save_dir, "overflow_log.npy"),     np.array(log_overflow))
-    np.save(os.path.join(save_dir, "td_loss_log.npy"),      np.array(log_loss))
+    np.save(os.path.join(save_dir, "episode_rewards.npy"), np.array(log_rewards))
+    np.save(os.path.join(save_dir, "ticks_log.npy"),       np.array(log_ticks))
+    np.save(os.path.join(save_dir, "td_loss_log.npy"),     np.array(log_loss))
 
     print(f"\n학습 완료. 가중치 저장: {final_path}.npz")
     return {
-        "rewards":    np.array(log_rewards),
-        "throughput": np.array(log_throughput),
-        "overflow":   np.array(log_overflow),
-        "loss":       np.array(log_loss),
-        "net":        nets[0],
+        "rewards": np.array(log_rewards),
+        "ticks":   np.array(log_ticks),
+        "loss":    np.array(log_loss),
+        "net":     nets[0],
     }
 
 

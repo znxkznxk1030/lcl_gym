@@ -25,9 +25,10 @@ os.makedirs(VIZ_DIR, exist_ok=True)
 CFG_8D = {
     **DEFAULT_CONFIG,
     "num_inbound_doors": 8,
-    "num_outbound_doors": 5,
-    "arrival_count_min": 133,
-    "arrival_count_max": 187,
+    "num_outbound_doors": 8,
+    "arrival_count_min": 67,
+    "arrival_count_max": 94,
+    "all_trucks_at_start": True,        # 모든 트럭을 t=0에 일괄 대기
 }
 
 N_BENCH = 20   # 벤치마크 에피소드 수
@@ -114,6 +115,7 @@ def run_episode_metrics(policy_factory, cfg, seed):
         actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(env.num_lanes)]
         obs, _, done, _ = env.step(actions)
     m = env.metrics.copy()
+    m["total_ticks"]              = float(env.t)
     m["door_utilization"]         = env.door_utilization
     m["outbound_door_utilization"] = env.outbound_door_utilization
     m["avg_dwell_time"]           = env.avg_dwell_time
@@ -129,6 +131,7 @@ def aggregate(results):
 
 def save_viz_json(frames, metrics, env, policy_name, seed, path):
     avg_fill = metrics["total_fill_rate"] / max(metrics["outbound_departures"], 1)
+    total_ticks = env.t
     data = {
         "meta": {
             "policy": policy_name, "seed": seed,
@@ -146,9 +149,8 @@ def save_viz_json(frames, metrics, env, policy_name, seed, path):
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
-    print(f"  → {path}  throughput={metrics['total_throughput']:.1f}  "
-          f"fill={avg_fill:.1%}  overflow={metrics['buffer_overflow_count']}  "
-          f"empty={metrics['empty_departures']}")
+    print(f"  → {path}  ticks={total_ticks}  throughput={metrics['total_throughput']:.1f}  "
+          f"fill={avg_fill:.1%}  empty={metrics['empty_departures']}")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -169,10 +171,8 @@ bench_results = {}
 for name, factory in BASELINE_POLICIES.items():
     results = [run_episode_metrics(factory, CFG_8D, seed=ep) for ep in range(N_BENCH)]
     bench_results[name] = aggregate(results)
-    tp = bench_results[name]["total_throughput"]
-    fr = bench_results[name]["avg_fill_rate"]
-    print(f"  {name:12s}  throughput={tp['mean']:>7.1f}±{tp['std']:<5.1f}  "
-          f"fill={fr['mean']*100:.1f}%")
+    tk = bench_results[name]["total_ticks"]
+    print(f"  {name:12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
     # viz JSON (seed=42 단일 에피소드)
     frames, metrics, env = run_episode_frames(factory, CFG_8D, seed=SEED_EVAL)
@@ -227,19 +227,18 @@ try:
                 actions = [0] * env.num_lanes
             obs, _, done, _ = env.step(actions)
         m = env.metrics.copy()
-        m["door_utilization"] = env.door_utilization
+        m["total_ticks"]              = float(env.t)
+        m["door_utilization"]         = env.door_utilization
         m["outbound_door_utilization"] = env.outbound_door_utilization
-        m["avg_dwell_time"] = env.avg_dwell_time
-        m["avg_fill_rate"]  = env.avg_fill_rate
-        m["avg_mip_ms"] = total_mip_t / max(calls, 1) * 1000
+        m["avg_dwell_time"]           = env.avg_dwell_time
+        m["avg_fill_rate"]            = env.avg_fill_rate
+        m["avg_mip_ms"]               = total_mip_t / max(calls, 1) * 1000
         return m, env
 
     mip_bench = [_run_mip_bench(ep)[0] for ep in range(N_BENCH)]
     bench_results["mip"] = aggregate(mip_bench)
-    tp = bench_results["mip"]["total_throughput"]
-    fr = bench_results["mip"]["avg_fill_rate"]
-    print(f"  {'mip':12s}  throughput={tp['mean']:>7.1f}±{tp['std']:<5.1f}  "
-          f"fill={fr['mean']*100:.1f}%")
+    tk = bench_results["mip"]["total_ticks"]
+    print(f"  {'mip':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
     # viz JSON
     frames_mip, metrics_mip, env_mip = None, None, None
@@ -311,10 +310,8 @@ def rl_factory(env, net=rl_net):
 
 rl_bench = [run_episode_metrics(rl_factory, CFG_8D, seed=ep) for ep in range(N_BENCH)]
 bench_results["rl"] = aggregate(rl_bench)
-tp = bench_results["rl"]["total_throughput"]
-fr = bench_results["rl"]["avg_fill_rate"]
-print(f"  {'rl':12s}  throughput={tp['mean']:>7.1f}±{tp['std']:<5.1f}  "
-      f"fill={fr['mean']*100:.1f}%")
+tk = bench_results["rl"]["total_ticks"]
+print(f"  {'rl':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
 # RL viz JSON
 frames_rl, metrics_rl, env_rl = run_episode_frames(rl_factory, CFG_8D, seed=SEED_EVAL)
@@ -345,10 +342,8 @@ def ga_factory(env, genes=best_genes, buf_cap=buf_cap):
 
 ga_bench = [run_episode_metrics(ga_factory, CFG_8D, seed=ep) for ep in range(N_BENCH)]
 bench_results["ga"] = aggregate(ga_bench)
-tp = bench_results["ga"]["total_throughput"]
-fr = bench_results["ga"]["avg_fill_rate"]
-print(f"  {'ga':12s}  throughput={tp['mean']:>7.1f}±{tp['std']:<5.1f}  "
-      f"fill={fr['mean']*100:.1f}%")
+tk = bench_results["ga"]["total_ticks"]
+print(f"  {'ga':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
 # GA viz JSON
 frames_ga, metrics_ga, env_ga = run_episode_frames(ga_factory, CFG_8D, seed=SEED_EVAL)
@@ -368,12 +363,12 @@ print(f"  GA 유전자 저장: {ga_genes_path}")
 # 5. 최종 벤치마크 요약 출력 + 저장
 # ─────────────────────────────────────────────────────────────────
 
-print("\n" + "=" * 62)
-print("[결과] 8-Door 2-Stage 정책 비교 (20 에피소드)")
-print("=" * 62)
-cols = ["total_throughput", "avg_fill_rate", "empty_departures",
-        "buffer_overflow_count", "door_utilization", "outbound_door_utilization"]
-labels = ["처리량(CBM)", "탑재율", "빈출발", "오버플로우", "In-DoorUtil", "Out-DoorUtil"]
+print("\n" + "=" * 72)
+print("[결과] 8-Door 2-Stage 정책 비교 (20 에피소드)  ★ 목표: total_ticks 최소화")
+print("=" * 72)
+cols = ["total_ticks", "total_throughput", "avg_fill_rate",
+        "empty_departures", "door_utilization", "outbound_door_utilization"]
+labels = ["Ticks(↓best)", "처리량(CBM)", "탑재율", "빈출발", "In-DoorUtil", "Out-DoorUtil"]
 
 header = f"{'정책':12s}" + "".join(f"{lbl:>14s}" for lbl in labels)
 print(header)
@@ -384,9 +379,7 @@ for name, agg in bench_results.items():
         if col not in agg:
             row += f"{'N/A':>14s}"; continue
         mv = agg[col]
-        if col == "avg_fill_rate":
-            row += f"  {mv['mean']*100:>6.1f}%±{mv['std']*100:<4.1f}"
-        elif col in ("door_utilization", "outbound_door_utilization"):
+        if col in ("avg_fill_rate", "door_utilization", "outbound_door_utilization"):
             row += f"  {mv['mean']*100:>6.1f}%±{mv['std']*100:<4.1f}"
         else:
             row += f"  {mv['mean']:>8.1f}±{mv['std']:<4.1f}"

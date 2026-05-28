@@ -74,7 +74,7 @@ def evaluate(
     cfg: dict,
     env: CrossDockEnv | None = None,
 ) -> float:
-    """N 에피소드 평균 처리량 (CBM) 반환."""
+    """N 에피소드 평균 tick 수의 음수 반환 (적을수록 높은 점수 = GA maximizes)."""
     num_lanes = cfg["num_lanes"]
     num_doors = cfg["num_inbound_doors"]
     buf_cap   = cfg["buffer_capacity"]
@@ -82,7 +82,7 @@ def evaluate(
     if env is None:
         env = CrossDockEnv(config=cfg, seed=seeds[0])
 
-    total = 0.0
+    total_ticks = 0
     for seed in seeds:
         env._seed = seed
         obs = env.reset()
@@ -91,8 +91,8 @@ def evaluate(
         while not done:
             actions = [policies[k].act(obs[k], num_doors) for k in range(num_lanes)]
             obs, _, done, _ = env.step(actions)
-        total += env.metrics["total_throughput"]
-    return total / len(seeds)
+        total_ticks += env.t
+    return -(total_ticks / len(seeds))  # 음수: tick 적을수록 fitness 높음
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ def run_ga(
 
     if verbose:
         print(f"[GA] 개체군 초기화 완료 (pop={pop_size}, gen={n_gen}, eval={n_eval})")
-        print("[GA] 초기 적합도 계산 중...")
+        print("[GA] 초기 적합도 계산 중... (fitness = -평균tick, 높을수록 빠름)")
 
     t0 = time.perf_counter()
     fitness = np.array([evaluate(pop[i], eval_seeds, cfg, env) for i in range(pop_size)])
@@ -160,7 +160,7 @@ def run_ga(
     if verbose:
         print(
             f"[GA] 초기 평가 완료 ({elapsed:.1f}s) | "
-            f"best={fitness.max():.1f}  mean={fitness.mean():.1f}\n"
+            f"best={-fitness.max():.1f}tick  mean={-fitness.mean():.1f}tick\n"
         )
 
     best_fitness = float(fitness.max())
@@ -200,8 +200,8 @@ def run_ga(
             marker = " ★" if improved else ""
             print(
                 f"Gen {gen+1:3d}/{n_gen} | "
-                f"best={gen_best:.1f}  mean={gen_mean:.1f} | "
-                f"all-time best={best_fitness:.1f}{marker}"
+                f"best={-gen_best:.1f}tick  mean={-gen_mean:.1f}tick | "
+                f"all-time best={-best_fitness:.1f}tick{marker}"
             )
 
     return best_genes, best_fitness, history
