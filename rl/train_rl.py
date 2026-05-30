@@ -34,20 +34,37 @@ def shape_rewards(
     num_doors: int,
 ) -> list:
     """
-    tick 최소화 shaping:
-    - 환경 기본 보상: -1/스텝
-    - 도어가 비어 있고 트럭이 있는데 요청하면 +1 (도어 가동률 극대화 장려)
-    - 도어가 비어 있고 트럭이 있는데 쉬면 추가 -1 (기회비용 패널티)
+    3-action shaping (0=skip, 1=request_inbound, 2=boost_outbound):
+    - 인바운드 기회(유휴 도어 + 대기 트럭)가 있는데 action=1이면 +0.5, 아니면 -0.5
+    - 아웃바운드 긴급(timer<10 AND 레인에 화물)인데 action=2이면 +0.5, 아니면 -0.5
+    - 버퍼 포화(fill>1.5) 상태에서 action=1이면 추가 -1.0
     """
+    BUF_FULL = 1.5
+
     shaped = []
     for r, obs, action in zip(env_rewards, obs_list, actions):
         idle_doors = float(obs[5])
         waiting    = float(obs[6])
-        can_assign = idle_doors > 0 and waiting > 0
-        if can_assign:
-            bonus = 1.0 if action == 1 else -1.0
-        else:
-            bonus = 0.0
+        lane_queue = float(obs[0])
+        fill_rate  = float(obs[2])   # 내 레인 도크 로딩률
+        buf_fill   = float(obs[4])   # fill ratio [0, 2]
+
+        can_inbound  = idle_doors > 0 and waiting > 0
+        needs_dock   = lane_queue > 0 and fill_rate == 0  # 화물 있지만 도크 없음
+        buf_stressed = buf_fill > BUF_FULL
+
+        bonus = 0.0
+        # 도크 재배정이 필요한 상황: action=2가 빈 도크 rescue 발동
+        if needs_dock:
+            bonus += 0.8 if action == 2 else -0.5
+
+        if can_inbound:
+            if buf_stressed:
+                if action == 1:
+                    bonus -= 1.0  # 버퍼 포화에서 인바운드 요청 → 패널티
+            else:
+                bonus += 0.4 if action == 1 else -0.3
+
         shaped.append(r + bonus)
     return shaped
 
@@ -82,7 +99,7 @@ def train(
     truck_selection_mode = env.use_truck_selection
     n_agents  = env.top_k_trucks if truck_selection_mode else env.num_lanes
     obs_size  = env.obs_size
-    n_actions = 2  # 0=skip, 1=select (truck-selection) or request (lane mode)
+    n_actions = 2 if truck_selection_mode else 3  # truck-sel: 0/1; lane: 0/1/2
 
     # ── 네트워크 초기화 ───────────────────────────────────────────────
     if shared_weights:

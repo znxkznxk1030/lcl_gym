@@ -25,7 +25,7 @@ _OBS_SCALE_BASE = np.array([
     1.0,    # 1: congestion
     1.0,    # 2: outbound_fill_rate
     28.0,   # 3: outbound_timer (loading_timer_max)
-    500.0,  # 4: buffer (현재 적재량, 제약 없음 — 에피소드 최대 추정치)
+    2.0,    # 4: buffer fill ratio [0,2] (env에서 이미 정규화)
     10.0,   # 5: idle_inbound_doors (up to 10)
     200.0,  # 6: waiting_trucks
     300.0,  # 7: scheduled_trucks
@@ -34,6 +34,9 @@ _OBS_SCALE_BASE = np.array([
 
 
 def normalize_obs(obs: np.ndarray) -> np.ndarray:
+    # truck-selection 모드(size=20): 이미 env에서 정규화됨 → 1로 나눔
+    if len(obs) == 20:
+        return obs
     n_door_matches = len(obs) - len(_OBS_SCALE_BASE)
     scale = np.concatenate([
         _OBS_SCALE_BASE,
@@ -61,13 +64,13 @@ class QLearningPolicy(BasePolicy):
         self.rng = rng or np.random.default_rng()
 
     def act(self, obs: np.ndarray, num_doors: int) -> int:
-        """epsilon-greedy 행동 선택. 반환: 0 (skip) 또는 1 (request)"""
+        """epsilon-greedy 행동 선택. 반환: 0=skip, 1=request_inbound, 2=boost_outbound"""
         if self.rng.random() < self.epsilon:
-            return int(self.rng.integers(0, 2))
+            return int(self.rng.integers(0, 3))
 
         obs_norm = normalize_obs(obs)
         q = self.net.forward(obs_norm)
-        return int(np.argmax(q[:2]))
+        return int(np.argmax(q[:3]))
 
     def reset(self):
         pass

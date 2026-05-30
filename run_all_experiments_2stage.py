@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 run_all_experiments_2stage.py
-8-Door 2-Stage 환경에서 모든 정책 실험 수행 후 viz/ 에 JSON 저장.
-
-실행:
-    python run_all_experiments_2stage.py
+Lane-mode (3-action: 0=skip / 1=request_inbound / 2=boost_outbound) 실험.
+  - num_outbound_doors=3 (< num_lanes=5) → 아웃바운드 도크 희소성 생성
+  - buffer_capacity=80 → 버퍼 포화 시 overflow 패널티
+  - RL이 인바운드 수용 타이밍 + 아웃바운드 우선순위를 동시에 최적화
+결과는 viz/<YYYYMMDD_NNN>/ 하위 폴더에 저장.
 """
 from __future__ import annotations
 import json, os, sys, time
+from datetime import date
 import numpy as np
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -19,25 +21,52 @@ from env.policies import RandomPolicy, FIFOPolicy, GreedyPolicy, HeuristicPriori
 VIZ_DIR = os.path.join(ROOT, "viz")
 os.makedirs(VIZ_DIR, exist_ok=True)
 
+# ── dated run 디렉토리 생성 ────────────────────────────────────────
+today = date.today().strftime("%Y%m%d")
+serial = 1
+while True:
+    run_dirname = f"{today}_{serial:03d}"
+    RUN_DIR = os.path.join(VIZ_DIR, run_dirname)
+    if not os.path.exists(RUN_DIR):
+        break
+    serial += 1
+os.makedirs(RUN_DIR)
+print(f"[저장 경로] {RUN_DIR}")
+
 # ─────────────────────────────────────────────────────────────────
-# 8-Door 2-Stage 환경 설정
+# Lane-mode 3-action 환경 설정
 # ─────────────────────────────────────────────────────────────────
 CFG_8D = {
     **DEFAULT_CONFIG,
-    "num_inbound_doors": 8,
-    "num_outbound_doors": 8,
-    "arrival_count_min": 67,
-    "arrival_count_max": 94,
-    "all_trucks_at_start": True,
+    "num_inbound_doors": 3,           # 인바운드 병목
+    "num_outbound_doors": 3,          # 아웃바운드 희소 (< num_lanes=5)
+    "buffer_capacity": 80.0,          # 유한 버퍼 → overflow 패널티 활성화
+    "arrival_count_min": 50,
+    "arrival_count_max": 70,
+    "all_trucks_at_start": False,
+    "arrival_pattern": "clustered",
+    "arrival_cluster_count": 4,
+    "arrival_time_window": 300,
     "compound_trucks": False,
+    "use_truck_selection": False,     # Lane mode (3-action)
+    # 작업자 부족 이벤트
+    "enable_disruptions": True,
+    "disruption_door_failure": True,
+    "disruption_door_failure_prob": 0.02,
+    "disruption_door_failure_duration_min": 10,
+    "disruption_door_failure_duration_max": 20,
 }
 
-N_BENCH = 20   # 벤치마크 에피소드 수
-SEED_EVAL = 42  # viz JSON 생성용 단일 시드
+N_BENCH   = 20
+SEED_EVAL = 42
 
 # ─────────────────────────────────────────────────────────────────
 # 헬퍼
 # ─────────────────────────────────────────────────────────────────
+
+def _n_agents(env: CrossDockEnv) -> int:
+    return env.top_k_trucks if env.use_truck_selection else env.num_lanes
+
 
 def capture_frame(env, actions, rewards):
     return {
@@ -98,11 +127,12 @@ def capture_frame(env, actions, rewards):
 def run_episode_frames(policy_factory, cfg, seed=42):
     env = CrossDockEnv(config=cfg, seed=seed)
     obs = env.reset()
+    n = _n_agents(env)
     policies = policy_factory(env)
-    frames = [capture_frame(env, [0]*env.num_lanes, [0.0]*env.num_lanes)]
+    frames = [capture_frame(env, [0]*n, [0.0]*n)]
     done = False
     while not done:
-        actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(env.num_lanes)]
+        actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(n)]
         obs, rewards, done, _ = env.step(actions)
         frames.append(capture_frame(env, actions, rewards))
     return frames, env.metrics, env
@@ -111,17 +141,18 @@ def run_episode_frames(policy_factory, cfg, seed=42):
 def run_episode_metrics(policy_factory, cfg, seed):
     env = CrossDockEnv(config=cfg, seed=seed)
     obs = env.reset()
+    n = _n_agents(env)
     policies = policy_factory(env)
     done = False
     while not done:
-        actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(env.num_lanes)]
+        actions = [policies[k].act(obs[k], env.num_inbound_doors) for k in range(n)]
         obs, _, done, _ = env.step(actions)
     m = env.metrics.copy()
-    m["total_ticks"]              = float(env.t)
-    m["door_utilization"]         = env.door_utilization
+    m["total_ticks"]               = float(env.t)
+    m["door_utilization"]          = env.door_utilization
     m["outbound_door_utilization"] = env.outbound_door_utilization
-    m["avg_dwell_time"]           = env.avg_dwell_time
-    m["avg_fill_rate"]            = env.avg_fill_rate
+    m["avg_dwell_time"]            = env.avg_dwell_time
+    m["avg_fill_rate"]             = env.avg_fill_rate
     return m
 
 
@@ -133,7 +164,6 @@ def aggregate(results):
 
 def save_viz_json(frames, metrics, env, policy_name, seed, path):
     avg_fill = metrics["total_fill_rate"] / max(metrics["outbound_departures"], 1)
-    total_ticks = env.t
     data = {
         "meta": {
             "policy": policy_name, "seed": seed,
@@ -151,7 +181,7 @@ def save_viz_json(frames, metrics, env, policy_name, seed, path):
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
-    print(f"  → {path}  ticks={total_ticks}  throughput={metrics['total_throughput']:.1f}  "
+    print(f"  → {path}  ticks={env.t}  throughput={metrics['total_throughput']:.1f}  "
           f"fill={avg_fill:.1%}  empty={metrics['empty_departures']}")
 
 
@@ -160,14 +190,15 @@ def save_viz_json(frames, metrics, env, policy_name, seed, path):
 # ─────────────────────────────────────────────────────────────────
 
 BASELINE_POLICIES = {
-    "random":    lambda env: [RandomPolicy(np.random.default_rng(i)) for i in range(env.num_lanes)],
-    "fifo":      lambda env: [FIFOPolicy()                            for _ in range(env.num_lanes)],
-    "greedy":    lambda env: [GreedyPolicy()                          for _ in range(env.num_lanes)],
-    "heuristic": lambda env: [HeuristicPriorityPolicy()               for _ in range(env.num_lanes)],
+    "random":    lambda env: [RandomPolicy(np.random.default_rng(i))
+                              for i in range(_n_agents(env))],
+    "fifo":      lambda env: [FIFOPolicy()               for _ in range(_n_agents(env))],
+    "greedy":    lambda env: [GreedyPolicy()             for _ in range(_n_agents(env))],
+    "heuristic": lambda env: [HeuristicPriorityPolicy()  for _ in range(_n_agents(env))],
 }
 
 print("=" * 62)
-print("[1] 베이스라인 정책 비교 (8-Door 2-Stage, 20 에피소드)")
+print("[1] 베이스라인 정책 비교 (Lane-mode 3-action, 20 에피소드)")
 print("=" * 62)
 bench_results = {}
 for name, factory in BASELINE_POLICIES.items():
@@ -176,38 +207,38 @@ for name, factory in BASELINE_POLICIES.items():
     tk = bench_results[name]["total_ticks"]
     print(f"  {name:12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
-    # viz JSON (seed=42 단일 에피소드)
     frames, metrics, env = run_episode_frames(factory, CFG_8D, seed=SEED_EVAL)
-    prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
     save_viz_json(frames, metrics, env, name, SEED_EVAL,
-                  os.path.join(VIZ_DIR, f"{prefix}_{name}.json"))
+                  os.path.join(RUN_DIR, f"sim_2stage_{name}.json"))
 
 # ─────────────────────────────────────────────────────────────────
 # 2. MILP
 # ─────────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 62)
-print("[2] MILP (8-Door 2-Stage)")
+print("[2] MILP (Lane-mode: 인바운드 재정렬 + 아웃바운드 긴급 우선)")
 print("=" * 62)
 try:
-    from mip.solve_mip import run_episode_mip, solve_assignment
+    from mip.solve_mip import solve_assignment
+    from mip.solve_mip import capture_frame as mip_cap
 
-    def _run_mip_bench(seed):
-        import time as _time
-        cfg_with_count = {**CFG_8D}
-        # run_episode_mip 는 별도 env를 만들므로 config 패치
-        from env.crossdock_env import CrossDockEnv as _Env
-        env = _Env(config=cfg_with_count, seed=seed)
-        obs = env.reset()
-        total_mip_t = 0.0; calls = 0; done = False
+    MILP_URGENT_TIMER = 10  # 이 tick 이하이면 outbound 긴급 → action=2
+
+    def _run_mip_one(seed, capture=False):
+        env = CrossDockEnv(config=CFG_8D, seed=seed)
+        obs_list = env.reset()
+        n = _n_agents(env)
+        total_mip_t = 0.0; calls = 0
+        frames = [mip_cap(env, [0]*n, [0.0]*n)] if capture else None
+        done = False
         while not done:
             idle_doors = [d for d in env.doors if not d.is_busy]
             waiting    = env.waiting_trucks
             if idle_doors and waiting:
-                t0 = _time.perf_counter()
+                t0 = time.perf_counter()
                 assigned = solve_assignment(waiting, env.doors, env.outbound_trucks,
                                             max(env.buffer_capacity - env.buffer, 0.0))
-                total_mip_t += _time.perf_counter() - t0; calls += 1
+                total_mip_t += time.perf_counter() - t0; calls += 1
                 assigned_set = set()
                 front = []
                 for idx in assigned:
@@ -215,88 +246,55 @@ try:
                         front.append(waiting[idx]); assigned_set.add(idx)
                 rest = [t for i, t in enumerate(waiting) if i not in assigned_set]
                 env.waiting_trucks = front + rest
-                req = set()
-                for idx in assigned:
-                    if idx is not None and idx < len(waiting) and waiting[idx].shipments:
-                        req.add(min(waiting[idx].shipments,
-                                    key=lambda k: env.outbound_trucks[k].departure_timer))
-                if len(req) < len(idle_doors):
-                    for k in sorted(range(env.num_lanes),
-                                    key=lambda k: env.outbound_trucks[k].departure_timer):
-                        if len(req) >= len(idle_doors): break
-                        req.add(k)
-                actions = [1 if k in req else 0 for k in range(env.num_lanes)]
-            else:
-                actions = [0] * env.num_lanes
-            obs, _, done, _ = env.step(actions)
-        m = env.metrics.copy()
-        m["total_ticks"]              = float(env.t)
-        m["door_utilization"]         = env.door_utilization
-        m["outbound_door_utilization"] = env.outbound_door_utilization
-        m["avg_dwell_time"]           = env.avg_dwell_time
-        m["avg_fill_rate"]            = env.avg_fill_rate
-        m["avg_mip_ms"]               = total_mip_t / max(calls, 1) * 1000
-        return m, env
 
-    mip_bench = [_run_mip_bench(ep)[0] for ep in range(N_BENCH)]
+            # Lane-mode actions: action=2 when outbound is urgent, else 1 or 0
+            obs_list = env.get_obs()
+            actions = []
+            for k in range(n):
+                o = obs_list[k]
+                timer      = float(o[3])
+                lane_queue = float(o[0])
+                idle       = float(o[5])
+                wait       = float(o[6])
+                if lane_queue > 0 and timer < MILP_URGENT_TIMER:
+                    actions.append(2)
+                elif wait > 0 and idle > 0:
+                    actions.append(1)
+                else:
+                    actions.append(0)
+
+            obs_list, rewards, done, _ = env.step(actions)
+            if capture:
+                frames.append(mip_cap(env, actions, rewards))
+        m = env.metrics.copy()
+        m["total_ticks"]               = float(env.t)
+        m["door_utilization"]          = env.door_utilization
+        m["outbound_door_utilization"] = env.outbound_door_utilization
+        m["avg_dwell_time"]            = env.avg_dwell_time
+        m["avg_fill_rate"]             = env.avg_fill_rate
+        m["avg_mip_ms"]                = total_mip_t / max(calls, 1) * 1000
+        return m, env, frames
+
+    mip_bench = [_run_mip_one(ep)[0] for ep in range(N_BENCH)]
     bench_results["mip"] = aggregate(mip_bench)
     tk = bench_results["mip"]["total_ticks"]
     print(f"  {'mip':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
-    # viz JSON
-    frames_mip, metrics_mip, env_mip = None, None, None
-    from mip.solve_mip import capture_frame as mip_cap
-    env_viz = CrossDockEnv(config=CFG_8D, seed=SEED_EVAL)
-    obs_viz = env_viz.reset()
-    import time as _t
-    frames_mip = [mip_cap(env_viz, [0]*env_viz.num_lanes, [0.0]*env_viz.num_lanes)]
-    total_mt = 0.0; calls_viz = 0; done_viz = False
-    while not done_viz:
-        idle_doors = [d for d in env_viz.doors if not d.is_busy]
-        waiting = env_viz.waiting_trucks
-        if idle_doors and waiting:
-            t0 = _t.perf_counter()
-            assigned = solve_assignment(waiting, env_viz.doors, env_viz.outbound_trucks,
-                                        max(env_viz.buffer_capacity - env_viz.buffer, 0.0))
-            total_mt += _t.perf_counter() - t0; calls_viz += 1
-            assigned_set = set()
-            front = []
-            for idx in assigned:
-                if idx is not None and idx not in assigned_set:
-                    front.append(waiting[idx]); assigned_set.add(idx)
-            rest = [t for i, t in enumerate(waiting) if i not in assigned_set]
-            env_viz.waiting_trucks = front + rest
-            req = set()
-            for idx in assigned:
-                if idx is not None and idx < len(waiting) and waiting[idx].shipments:
-                    req.add(min(waiting[idx].shipments,
-                                key=lambda k: env_viz.outbound_trucks[k].departure_timer))
-            if len(req) < len(idle_doors):
-                for k in sorted(range(env_viz.num_lanes),
-                                key=lambda k: env_viz.outbound_trucks[k].departure_timer):
-                    if len(req) >= len(idle_doors): break
-                    req.add(k)
-            actions_viz = [1 if k in req else 0 for k in range(env_viz.num_lanes)]
-        else:
-            actions_viz = [0] * env_viz.num_lanes
-        obs_viz, rewards_viz, done_viz, _ = env_viz.step(actions_viz)
-        frames_mip.append(mip_cap(env_viz, actions_viz, rewards_viz))
-    _prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
-    save_viz_json(frames_mip, env_viz.metrics, env_viz, "mip", SEED_EVAL,
-                  os.path.join(VIZ_DIR, f"{_prefix}_mip.json"))
+    m_viz, env_viz, frames_viz = _run_mip_one(SEED_EVAL, capture=True)
+    save_viz_json(frames_viz, m_viz, env_viz, "mip", SEED_EVAL,
+                  os.path.join(RUN_DIR, "sim_2stage_mip.json"))
 except ImportError as e:
     print(f"  MILP 건너뜀 (pulp 미설치): {e}")
 
 # ─────────────────────────────────────────────────────────────────
-# 3. RL 학습 (8-Door 2-Stage, 2000 에피소드)
+# 3. RL 학습 (Truck-Selection, 2000 에피소드)
 # ─────────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 62)
-print("[3] RL 학습 (8-Door 2-Stage, 2000 에피소드)")
+print("[3] RL 학습 (Lane-mode 3-action, 2000 에피소드)")
 print("=" * 62)
 from rl.train_rl import train as rl_train
-from rl.networks import NumpyMLP
-from rl.rl_policy import QLearningPolicy, normalize_obs
+from rl.rl_policy import QLearningPolicy
 
 rl_result = rl_train(
     num_episodes=2000,
@@ -307,73 +305,64 @@ rl_result = rl_train(
 )
 rl_net = rl_result["net"]
 
-# RL 벤치마크
 def rl_factory(env, net=rl_net):
     p = QLearningPolicy(net=net, epsilon=0.0)
-    return [p] * env.num_lanes
+    return [p] * _n_agents(env)
 
 rl_bench = [run_episode_metrics(rl_factory, CFG_8D, seed=ep) for ep in range(N_BENCH)]
 bench_results["rl"] = aggregate(rl_bench)
 tk = bench_results["rl"]["total_ticks"]
 print(f"  {'rl':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
-# RL viz JSON
-_prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
 frames_rl, metrics_rl, env_rl = run_episode_frames(rl_factory, CFG_8D, seed=SEED_EVAL)
 save_viz_json(frames_rl, metrics_rl, env_rl, "rl", SEED_EVAL,
-              os.path.join(VIZ_DIR, f"{_prefix}_rl.json"))
+              os.path.join(RUN_DIR, "sim_2stage_rl.json"))
 
 # ─────────────────────────────────────────────────────────────────
-# 4. GA 학습 (8-Door 2-Stage)
+# 4. GA 학습 (Truck-Selection, pop=50 gen=100)
 # ─────────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 62)
-print("[4] GA 학습 (8-Door 2-Stage, pop=50 gen=100)")
+print("[4] GA 학습 (Lane-mode 3-action, pop=50 gen=100)")
 print("=" * 62)
-from ga.train_ga import run_ga, CONFIG_8DOOR as GA_CFG_8D
-from ga.ga_policy import GAPolicy
+from ga.train_ga import run_ga
+from ga.ga_policy import GAPolicy, GENE_NAMES
 
-# GA_CFG_8D 는 기존 3도어 기준이므로 8도어 config 로 덮어씀
-GA_CFG_8D_ACTUAL = {**GA_CFG_8D, **CFG_8D}
+GA_CFG = {**DEFAULT_CONFIG, **CFG_8D}
 
 best_genes, best_fitness, ga_history = run_ga(
     pop_size=50, n_gen=100, n_eval=8, seed=0,
-    cfg=GA_CFG_8D_ACTUAL, verbose=True,
+    cfg=GA_CFG, verbose=True,
 )
 
-buf_cap = GA_CFG_8D_ACTUAL["buffer_capacity"]
-def ga_factory(env, genes=best_genes, buf_cap=buf_cap):
-    return [GAPolicy(genes, buffer_capacity=buf_cap) for _ in range(env.num_lanes)]
+def ga_factory(env, genes=best_genes):
+    return [GAPolicy(genes) for _ in range(_n_agents(env))]
 
 ga_bench = [run_episode_metrics(ga_factory, CFG_8D, seed=ep) for ep in range(N_BENCH)]
 bench_results["ga"] = aggregate(ga_bench)
 tk = bench_results["ga"]["total_ticks"]
 print(f"  {'ga':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
-# GA viz JSON
-_prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
 frames_ga, metrics_ga, env_ga = run_episode_frames(ga_factory, CFG_8D, seed=SEED_EVAL)
 save_viz_json(frames_ga, metrics_ga, env_ga, "ga", SEED_EVAL,
-              os.path.join(VIZ_DIR, f"{_prefix}_ga.json"))
+              os.path.join(RUN_DIR, "sim_2stage_ga.json"))
 
-# GA 유전자 저장
 ga_genes_path = os.path.join(ROOT, "ga", "best_genes_2stage.json")
 with open(ga_genes_path, "w") as f:
-    from ga.ga_policy import GENE_NAMES
     json.dump({"genes": best_genes.tolist(), "gene_names": GENE_NAMES,
                "fitness": float(best_fitness), "history": ga_history,
-               "config": "8door_2stage"}, f, indent=2)
+               "config": "lane_mode_3action"}, f, indent=2)
 print(f"  GA 유전자 저장: {ga_genes_path}")
 
 # ─────────────────────────────────────────────────────────────────
-# 5. 최종 벤치마크 요약 출력 + 저장
+# 5. 최종 벤치마크 요약
 # ─────────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 72)
-print("[결과] 8-Door 2-Stage 정책 비교 (20 에피소드)  ★ 목표: total_ticks 최소화")
+print("[결과] Lane-mode 3-action 정책 비교 (20 에피소드)  ★ 목표: total_ticks 최소화")
 print("=" * 72)
-cols = ["total_ticks", "total_throughput", "avg_fill_rate",
-        "empty_departures", "door_utilization", "outbound_door_utilization"]
+cols   = ["total_ticks", "total_throughput", "avg_fill_rate",
+          "empty_departures", "door_utilization", "outbound_door_utilization"]
 labels = ["Ticks(↓best)", "처리량(CBM)", "탑재율", "빈출발", "In-DoorUtil", "Out-DoorUtil"]
 
 header = f"{'정책':12s}" + "".join(f"{lbl:>14s}" for lbl in labels)
@@ -391,8 +380,7 @@ for name, agg in bench_results.items():
             row += f"  {mv['mean']:>8.1f}±{mv['std']:<4.1f}"
     print(row)
 
-# 요약 JSON 저장
-summary_path = os.path.join(VIZ_DIR, "benchmark_2stage_8door.json")
+summary_path = os.path.join(RUN_DIR, "benchmark_2stage_8door.json")
 with open(summary_path, "w", encoding="utf-8") as f:
     json.dump({
         name: {k: {"mean": float(v["mean"]), "std": float(v["std"])}
@@ -400,4 +388,5 @@ with open(summary_path, "w", encoding="utf-8") as f:
         for name, agg in bench_results.items()
     }, f, indent=2, ensure_ascii=False)
 print(f"\n[저장] 벤치마크 요약: {summary_path}")
-print("[저장] viz JSON 파일: viz/sim_2stage_*.json")
+print(f"[저장] viz JSON: {RUN_DIR}/sim_2stage_*.json")
+print(f"[run_dir] {run_dirname}")

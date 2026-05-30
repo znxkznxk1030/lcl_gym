@@ -29,10 +29,15 @@ from env.crossdock_env import CrossDockEnv, DEFAULT_CONFIG
 from env.policies import HeuristicPriorityPolicy
 from ga.ga_policy import (
     GAPolicy,
+    TruckSelGAPolicy,
     GENE_BOUNDS,
     GENE_NAMES,
     HEURISTIC_GENES,
     N_GENES,
+    TRUCKSEL_GENE_BOUNDS,
+    TRUCKSEL_GENE_NAMES,
+    TRUCKSEL_HEURISTIC_GENES,
+    N_TRUCKSEL_GENES,
 )
 
 
@@ -75,21 +80,26 @@ def evaluate(
     env: CrossDockEnv | None = None,
 ) -> float:
     """N 에피소드 평균 tick 수의 음수 반환 (적을수록 높은 점수 = GA maximizes)."""
-    num_lanes = cfg["num_lanes"]
+    truck_sel = cfg.get("use_truck_selection", False)
     num_doors = cfg["num_inbound_doors"]
     buf_cap   = cfg["buffer_capacity"]
 
     if env is None:
         env = CrossDockEnv(config=cfg, seed=seeds[0])
 
+    n_agents = env.top_k_trucks if truck_sel else env.num_lanes
+
     total_ticks = 0
     for seed in seeds:
         env._seed = seed
         obs = env.reset()
-        policies = [GAPolicy(genes, buffer_capacity=buf_cap) for _ in range(num_lanes)]
+        if truck_sel:
+            policies = [TruckSelGAPolicy(genes) for _ in range(n_agents)]
+        else:
+            policies = [GAPolicy(genes, buffer_capacity=buf_cap) for _ in range(n_agents)]
         done = False
         while not done:
-            actions = [policies[k].act(obs[k], num_doors) for k in range(num_lanes)]
+            actions = [policies[k].act(obs[k], num_doors) for k in range(n_agents)]
             obs, _, done, _ = env.step(actions)
         total_ticks += env.t
     return -(total_ticks / len(seeds))  # 음수: tick 적을수록 fitness 높음
@@ -107,17 +117,24 @@ def tournament_select(
 
 
 def crossover(
-    p1: np.ndarray, p2: np.ndarray, rng: np.random.Generator
+    p1: np.ndarray, p2: np.ndarray, rng: np.random.Generator,
+    n_genes: int = N_GENES,
 ) -> np.ndarray:
     if rng.random() < CROSS_RATE:
-        mask = rng.random(N_GENES) < 0.5
+        mask = rng.random(n_genes) < 0.5
         return np.where(mask, p1, p2)
     return p1.copy()
 
 
-def mutate(genes: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    noise = rng.normal(0.0, MUT_SIGMA, size=N_GENES)
-    return np.clip(genes + noise, BOUNDS_LO, BOUNDS_HI)
+def mutate(
+    genes: np.ndarray, rng: np.random.Generator,
+    bounds_lo: np.ndarray = None, bounds_hi: np.ndarray = None,
+    n_genes: int = N_GENES,
+) -> np.ndarray:
+    lo = bounds_lo if bounds_lo is not None else BOUNDS_LO
+    hi = bounds_hi if bounds_hi is not None else BOUNDS_HI
+    noise = rng.normal(0.0, MUT_SIGMA, size=n_genes)
+    return np.clip(genes + noise, lo, hi)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -143,9 +160,22 @@ def run_ga(
     rng = np.random.default_rng(seed)
     eval_seeds = list(range(n_eval))
 
+    # 모드 감지: truck_selection 여부에 따라 유전자 구조 선택
+    truck_sel = cfg.get("use_truck_selection", False)
+    if truck_sel:
+        n_genes   = N_TRUCKSEL_GENES
+        bounds_lo = TRUCKSEL_GENE_BOUNDS[:, 0]
+        bounds_hi = TRUCKSEL_GENE_BOUNDS[:, 1]
+        init_genes = TRUCKSEL_HEURISTIC_GENES.copy()
+    else:
+        n_genes   = N_GENES
+        bounds_lo = BOUNDS_LO
+        bounds_hi = BOUNDS_HI
+        init_genes = HEURISTIC_GENES.copy()
+
     # 초기 개체군 — 기존 Heuristic 유전자를 씨앗으로 포함
-    pop = rng.uniform(BOUNDS_LO, BOUNDS_HI, size=(pop_size, N_GENES))
-    pop[0] = HEURISTIC_GENES.copy()
+    pop = rng.uniform(bounds_lo, bounds_hi, size=(pop_size, n_genes))
+    pop[0] = init_genes
 
     env = CrossDockEnv(config=cfg, seed=0)
 
@@ -178,9 +208,9 @@ def run_ga(
                 crossover(
                     tournament_select(pop, fitness, rng),
                     tournament_select(pop, fitness, rng),
-                    rng,
+                    rng, n_genes=n_genes,
                 ),
-                rng,
+                rng, bounds_lo=bounds_lo, bounds_hi=bounds_hi, n_genes=n_genes,
             )
             new_pop.append(child)
 

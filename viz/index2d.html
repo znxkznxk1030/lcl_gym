@@ -199,14 +199,23 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
-      <optgroup label="── 2-Stage 8door · 도킹 완료 후 종료 (20ep 평균) ──">
-        <option value="sim_2stage_mip.json">🥇 MILP  avg 191.8 tick  (seed42: 192)</option>
-        <option value="sim_2stage_heuristic.json">Heuristic  avg 196.3 tick  (seed42: 192)</option>
-        <option value="sim_2stage_random.json">Random  avg 197.1 tick  (seed42: 192)</option>
-        <option value="sim_2stage_fifo.json">FIFO  avg 196.9 tick  (seed42: 192)</option>
-        <option value="sim_2stage_greedy.json">Greedy  avg 196.9 tick  (seed42: 192)</option>
-        <option value="sim_2stage_rl.json">RL  avg 196.9 tick  (seed42: 192)</option>
-        <option value="sim_2stage_ga.json">GA  avg 196.9 tick  (seed42: 192)</option>
+      <optgroup label="── Truck-Selection · 3door · 동적입고 · disruption (20ep 평균) [20260531] ──">
+        <option value="20260531_002/sim_2stage_random.json">Random  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_fifo.json">FIFO  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_greedy.json">Greedy  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_heuristic.json">Heuristic  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_mip.json">MILP  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_rl.json">RL  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_ga.json">GA  avg 327.1 tick  (seed42: 336)</option>
+      </optgroup>
+      <optgroup label="── 2-Stage 8door · 작업자부족 disruption (20ep 평균) ──">
+        <option value="sim_2stage_mip.json">🥇 MILP  avg 195.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_random.json">Random  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_fifo.json">FIFO  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_greedy.json">Greedy  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_rl.json">RL  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_heuristic.json">Heuristic  avg 201.5 tick  (seed42: 198)</option>
+        <option value="sim_2stage_ga.json">GA  avg 201.5 tick  (seed42: 198)</option>
       </optgroup>
       <optgroup label="── MIP 8door ──">
         <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
@@ -1514,15 +1523,15 @@ const POLICY_COLORS = {
   random:"#9333ea", fifo:"#2563eb", greedy:"#0891b2",
   heuristic:"#d97706", mip:"#dc2626", rl:"#16a34a", ga:"#0f766e",
 };
-// 정책명 → viz JSON 파일명 매핑 (compound truck 모드)
+// 정책명 → viz JSON 파일명 매핑 (truck-selection · 3door · 동적입고 · disruption [20260531_002])
 const POLICY_JSON = {
-  random:"sim_2stage_random.json", fifo:"sim_2stage_fifo.json",
-  greedy:"sim_2stage_greedy.json", heuristic:"sim_2stage_heuristic.json",
-  mip:"sim_2stage_mip.json", rl:"sim_2stage_rl.json", ga:"sim_2stage_ga.json",
+  random:"20260531_002/sim_2stage_random.json", fifo:"20260531_002/sim_2stage_fifo.json",
+  greedy:"20260531_002/sim_2stage_greedy.json", heuristic:"20260531_002/sim_2stage_heuristic.json",
+  mip:"20260531_002/sim_2stage_mip.json", rl:"20260531_002/sim_2stage_rl.json", ga:"20260531_002/sim_2stage_ga.json",
 };
-// seed=42 단일 시뮬레이션 tick (viz JSON 기준, 2-stage 8door)
+// seed=42 단일 시뮬레이션 tick (viz JSON 기준, truck-selection · 3door · disruption [20260531_002])
 const POLICY_SIM_TICKS = {
-  random:192, fifo:192, greedy:192, heuristic:192, mip:192, rl:192, ga:192,
+  random:336, fifo:336, greedy:336, heuristic:336, mip:336, rl:336, ga:336,
 };
 
 async function openBenchModal() {
@@ -1532,7 +1541,7 @@ async function openBenchModal() {
 
   let data;
   try {
-    const res = await fetch("benchmark_2stage_8door.json", {cache:"no-store"});
+    const res = await fetch("20260531_002/benchmark_2stage_8door.json", {cache:"no-store"});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch(e) {

@@ -50,6 +50,7 @@ DEFAULT_CONFIG = {
     "arrival_count_max": 70,
     "arrival_pattern": "clustered",
     "arrival_cluster_count": 4,
+    "arrival_time_window": None,       # None = episode_length 사용. 정수 설정 시 트럭 도착을 해당 tick 내로 압축
     # reward weights
     "reward_alpha": 0.7,
     "reward_beta": 0.3,
@@ -112,6 +113,7 @@ class CrossDockEnv:
         self.arrival_count_max: int      = cfg["arrival_count_max"]
         self.arrival_pattern: str        = cfg["arrival_pattern"]
         self.arrival_cluster_count: int  = cfg["arrival_cluster_count"]
+        self.arrival_time_window: Optional[int] = cfg.get("arrival_time_window", None)
 
         # 돌발사항
         self.enable_disruptions: bool             = cfg["enable_disruptions"]
@@ -256,8 +258,11 @@ class CrossDockEnv:
         # 5. Stage 1 액션: 인바운드 트럭 → 유휴 인바운드 도어 배정
         self._assign_doors(actions)
 
-        # 6. Stage 2: 유휴 아웃바운드 도크에 목적지 동적 할당
-        self._assign_outbound_destinations()
+        # 6. Stage 2: 유휴 아웃바운드 도크에 목적지 동적 할당 (action=2 레인 우선)
+        self._assign_outbound_destinations(actions)
+
+        # 6.5: action=2 레인이 있으면 빈 레인을 서비스하는 도크를 mid-trip 재배정
+        self._reassign_empty_serving_docks(actions)
 
         # 7. Stage 2: 소팅 레인 → 아웃바운드 도크 점진 적재
         self._progressive_load()
@@ -311,7 +316,9 @@ class CrossDockEnv:
         """
         idle_inbound   = sum(1 for d in self.doors if not d.is_busy)
         idle_outbound  = sum(1 for od in self.outbound_doors if not od.is_busy)
-        buffer_rem     = float(self.buffer)  # 버퍼 제약 없음 — 현재 적재량 노출
+        # buffer fill ratio [0, 2]: 0=empty, 1=at_capacity, >1=overflow zone
+        buf_cap_eff    = float(self.buffer_capacity) if self.buffer_capacity < 1e8 else 500.0
+        buffer_fill    = min(float(self.buffer) / max(buf_cap_eff, 1.0), 2.0)
         waiting        = len(self.waiting_trucks)
         scheduled      = len(self.arrival_schedule)
 
@@ -363,7 +370,7 @@ class CrossDockEnv:
                     lane.congestion,
                     od_fill,
                     od_timer,
-                    float(buffer_rem),
+                    buffer_fill,       # [0, 2] fill ratio (was raw buffer amount)
                     float(idle_inbound),
                     float(waiting),
                     float(scheduled),
@@ -376,37 +383,63 @@ class CrossDockEnv:
         return obs_list
 
     def _get_obs_truck_selection(self) -> List[np.ndarray]:
-        """트럭선택 모드 obs (변경 없음)."""
+        """
+        트럭선택 모드 obs (size = num_lanes*2 + 3 + num_lanes + 2 = 20 for 5 lanes).
+        모든 값을 [0, 1] 내외로 정규화하여 RL 수렴 안정성 확보.
+
+        layout:
+          [0:5]   timer_norm  = loading_timer / outbound_loading_time_max
+          [5:10]  queue_norm  = queue_volume  / outbound_capacity
+          [10]    buf_norm    = current_buffer / 500  (capped at 2)
+          [11]    idle_norm   = idle_inbound_doors / num_inbound_doors
+          [12]    nwait_norm  = waiting_count / arrival_count_max
+          [13:18] vol_norm_k  = truck_vol_k / (inbound_vol_max * inbound_max_dest)
+          [18]    total_norm  = truck_total / (inbound_vol_max * inbound_max_dest)
+          [19]    is_rush
+        """
         K  = self.top_k_trucks
         nL = self.num_lanes
 
-        # 목적지별 로딩 타이머 (동적 할당 기반)
         door_timers_by_dest = {
             od.assigned_dest: od.loading_timer
             for od in self.outbound_doors
             if od.is_busy and od.assigned_dest >= 0
         }
-        timers = np.array(
-            [door_timers_by_dest.get(k, self.outbound_loading_time_max) for k in range(nL)],
+        _tmax  = float(self.outbound_loading_time_max) + 1e-8
+        _qmax  = float(self.outbound_capacity) + 1e-8
+        _vmax  = float(self.inbound_vol_max * self.inbound_max_dest) + 1e-8
+        _nmax  = float(max(self.arrival_count_max, 1))
+        _dmax  = float(max(self.num_inbound_doors, 1))
+
+        timers_norm = np.array(
+            [door_timers_by_dest.get(k, self.outbound_loading_time_max) / _tmax
+             for k in range(nL)],
             dtype=np.float32,
         )
-        queues  = np.array([lane.queue_volume for lane in self.lanes], dtype=np.float32)
-        buf_rem = float(max(self.buffer_capacity - self.buffer, 0.0))
-        idle    = float(sum(1 for d in self.doors if not d.is_busy))
-        n_wait  = float(len(self.waiting_trucks))
+        queues_norm = np.array(
+            [lane.queue_volume / _qmax for lane in self.lanes], dtype=np.float32
+        )
+        buf_norm   = min(float(self.buffer) / 500.0, 2.0)
+        idle_norm  = float(sum(1 for d in self.doors if not d.is_busy)) / _dmax
+        nwait_norm = float(len(self.waiting_trucks)) / _nmax
 
-        global_ctx = np.concatenate([timers, queues, [buf_rem, idle, n_wait]])
+        global_ctx = np.array(
+            [*timers_norm, *queues_norm, buf_norm, idle_norm, nwait_norm],
+            dtype=np.float32,
+        )
 
         trucks = self.waiting_trucks[:K]
         obs_list = []
         for i in range(K):
             if i < len(trucks):
                 t = trucks[i]
-                vols = np.array(
-                    [float(t.shipments.get(k, 0)) for k in range(nL)], dtype=np.float32
+                vols_norm = np.array(
+                    [float(t.shipments.get(k, 0)) / _vmax for k in range(nL)],
+                    dtype=np.float32,
                 )
                 truck_feat = np.array(
-                    [*vols, float(t.total_volume()), float(getattr(t, "is_rush", False))],
+                    [*vols_norm, float(t.total_volume()) / _vmax,
+                     float(getattr(t, "is_rush", False))],
                     dtype=np.float32,
                 )
             else:
@@ -418,10 +451,11 @@ class CrossDockEnv:
     # Stage 2: 아웃바운드 도크 관리
     # ------------------------------------------------------------------
 
-    def _assign_outbound_destinations(self) -> None:
+    def _assign_outbound_destinations(self, actions=None) -> None:
         """
         유휴 아웃바운드 도크에 소팅 레인 동적 할당.
-        우선순위: queue_volume이 가장 많은 레인 (greedy).
+        레인 모드에서 action=2인 레인은 타이머 긴급도 순으로 우선 배정.
+        나머지 유휴 도크는 queue_volume 기준 greedy 배정.
 
         Compound mode: 여러 트럭이 같은 목적지를 동시에 로딩 가능.
                        화물 없는 레인에는 배정하지 않음 (트럭은 대기).
@@ -465,32 +499,42 @@ class CrossDockEnv:
                 )
                 od.start_loading(dest, loading_time)
         else:
-            # Non-compound mode: 목적지당 1개 도크 제한 (기존 동작)
+            # Non-compound mode: 목적지당 1개 도크 제한
             already_serving = {
                 od.assigned_dest
                 for od in self.outbound_doors
                 if od.is_busy and od.assigned_dest >= 0
             }
-            candidates = sorted(
-                [(k, lane.queue_volume) for k, lane in enumerate(self.lanes)
-                 if k not in already_serving],
-                key=lambda x: -x[1],
-            )
-            all_free = sorted(
-                [k for k in range(self.num_lanes) if k not in already_serving],
+
+            # action=2 레인: 타이머 긴급도(낮을수록 급함) 순 우선 배정
+            if actions is not None and not self.use_truck_selection:
+                door_timer_by_dest = {
+                    od.assigned_dest: od.loading_timer
+                    for od in self.outbound_doors
+                    if od.is_busy and od.assigned_dest >= 0
+                }
+                priority_lanes = sorted(
+                    [k for k, a in enumerate(actions)
+                     if a == 2 and k not in already_serving],
+                    key=lambda k: door_timer_by_dest.get(k, self.outbound_loading_time_max),
+                )
+            else:
+                priority_lanes = []
+
+            # 나머지 레인: queue_volume 내림차순 greedy
+            greedy_lanes = sorted(
+                [k for k in range(self.num_lanes)
+                 if k not in already_serving and k not in priority_lanes],
                 key=lambda k: -self.lanes[k].queue_volume,
             )
+            ordered = priority_lanes + greedy_lanes
+
             for od in idle_ods:
                 dest = None
-                for k, vol in candidates:
+                for k in ordered:
                     if k not in already_serving:
                         dest = k
                         break
-                if dest is None:
-                    for k in all_free:
-                        if k not in already_serving:
-                            dest = k
-                            break
                 if dest is None:
                     break
                 loading_time = int(
@@ -500,6 +544,52 @@ class CrossDockEnv:
                 )
                 od.start_loading(dest, loading_time)
                 already_serving.add(dest)
+
+    def _reassign_empty_serving_docks(self, actions=None) -> None:
+        """
+        action=2 레인 중 화물이 있고 도크가 없는 레인이 요청할 때,
+        현재 빈 레인(queue=0)을 서비스하고 있는 도크를 해당 레인으로 mid-trip 재배정.
+
+        이 기능이 FIFO 대비 RL/Greedy의 핵심 우위: FIFO는 action=2가 없어서
+        빈 레인 도크가 타이머만 소진하고 출발(empty departure)하는 반면,
+        action=2를 사용하는 정책은 해당 도크를 화물 있는 레인으로 즉시 전환.
+        """
+        if actions is None or self.use_truck_selection:
+            return
+
+        # action=2이고 화물이 있지만 아직 도크가 없는 레인
+        already_serving = {
+            od.assigned_dest for od in self.outbound_doors
+            if od.is_busy and od.assigned_dest >= 0
+        }
+        priority_lanes = sorted(
+            [k for k, a in enumerate(actions)
+             if a == 2 and self.lanes[k].queue_volume > 0 and k not in already_serving],
+            key=lambda k: -self.lanes[k].queue_volume,
+        )
+        if not priority_lanes:
+            return
+
+        # 빈 레인을 서비스 중인 도크 (화물 다 빠져나간 뒤 타이머만 남음)
+        empty_serving = [
+            od for od in self.outbound_doors
+            if od.is_busy and od.assigned_dest >= 0
+            and self.lanes[od.assigned_dest].queue_volume == 0
+        ]
+        if not empty_serving:
+            return
+
+        for od in empty_serving:
+            for k in priority_lanes:
+                if k in already_serving:
+                    continue
+                loading_time = int(self.rng.integers(
+                    self.outbound_loading_time_min, self.outbound_loading_time_max + 1
+                ))
+                already_serving.discard(od.assigned_dest)
+                od.start_loading(k, loading_time)
+                already_serving.add(k)
+                break  # 이 도크 재배정 완료, 다음 빈-도크로
 
     def _progressive_load(self) -> None:
         """Stage 2: 소팅 레인 → 아웃바운드 도크 점진 적재."""
@@ -536,18 +626,19 @@ class CrossDockEnv:
 
     def _build_arrival_schedule(self) -> List[Truck]:
         n = int(self.rng.integers(self.arrival_count_min, self.arrival_count_max + 1))
+        time_window = self.arrival_time_window if self.arrival_time_window else self.episode_length
 
         if self.arrival_pattern == "clustered":
             base = np.linspace(0.1, 0.9, self.arrival_cluster_count)
             jitter = self.rng.uniform(-0.05, 0.05, size=self.arrival_cluster_count)
-            centers = np.clip(base + jitter, 0.05, 0.95) * self.episode_length
+            centers = np.clip(base + jitter, 0.05, 0.95) * time_window
             cluster_ids = self.rng.integers(0, self.arrival_cluster_count, size=n)
-            spread = self.episode_length * 0.08
+            spread = time_window * 0.08
             raw_times = centers[cluster_ids] + self.rng.normal(0, spread, size=n)
-            arrival_times = sorted(int(np.clip(t, 0, self.episode_length - 1)) for t in raw_times)
+            arrival_times = sorted(int(np.clip(t, 0, time_window - 1)) for t in raw_times)
         else:
             arrival_times = sorted(
-                int(t) for t in self.rng.integers(0, self.episode_length, size=n)
+                int(t) for t in self.rng.integers(0, time_window, size=n)
             )
 
         schedule = []
@@ -591,7 +682,6 @@ class CrossDockEnv:
     def _process_released(self, trucks: List[Truck]) -> int:
         for truck in trucks:
             if self.compound_trucks and truck.routed_lane >= 0:
-                # 단일 목적지 라우팅: 정책이 지정한 레인으로 전체 화물 전송
                 vol = int(truck.total_volume())
                 self.buffer += vol
                 self.lanes[truck.routed_lane].add_volume(vol)
@@ -607,9 +697,14 @@ class CrossDockEnv:
                     self.metrics["dwell_time_sum"] += dwell
                     self.metrics["dwell_count"]    += 1
             if self.compound_trucks:
-                # 인바운드 처리 완료 → 동일 차량이 아웃바운드 대기열로 진입
                 self.outbound_waiting.append(truck)
-        return 0  # 버퍼 제약 없음 — overflow 항상 0
+
+        # 버퍼 초과분 계산 (유한 buffer_capacity 설정 시에만 실제 overflow 발생)
+        overflow = 0
+        if self.buffer > self.buffer_capacity:
+            overflow = int(self.buffer - self.buffer_capacity)
+            self.buffer = float(self.buffer_capacity)
+        return overflow
 
     def _assign_doors(self, actions: List[int]) -> None:
         if self.use_truck_selection:
@@ -651,7 +746,8 @@ class CrossDockEnv:
         n_avail  = len(self.waiting_trucks)
         selected = [i for i, a in enumerate(actions) if a == 1 and i < n_avail]
         if not selected:
-            return
+            # 폴백: 어떤 트럭도 선택되지 않으면 FIFO 순서 유지
+            selected = list(range(min(len(idle_doors), n_avail)))
 
         sel_set = set(selected)
         front = [self.waiting_trucks[i] for i in selected]
@@ -686,8 +782,8 @@ class CrossDockEnv:
         depart_info: List[Optional[dict]],
         overflow: int,
     ) -> List[float]:
-        # tick 최소화 목표: 매 스텝 -1 패널티 (누적 보상 = -총 tick 수)
-        return [-1.0] * self.num_lanes
+        r = -1.0 - float(overflow) * 0.3  # overflow → 추가 패널티
+        return [r] * self.num_lanes
 
     def _apply_disruptions(self) -> None:
         # 1) 도어 고장
