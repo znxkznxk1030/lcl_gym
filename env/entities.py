@@ -10,6 +10,7 @@ class Truck:
     arrival_time: int
     shipments: dict  # {lane_id: volume}
     is_rush: bool = False  # 긴급 트럭 여부 (돌발 발생)
+    routed_lane: int = -1  # compound 모드에서 정책이 지정한 아웃바운드 레인
 
     def total_volume(self) -> float:
         return sum(self.shipments.values())
@@ -84,6 +85,7 @@ class Door:
         self.remaining_time = processing_time
         self.assigned_truck = truck
         self.assigned_lane = lane_id
+        truck.routed_lane = lane_id  # 화물이 도착할 레인을 트럭에 기록
 
     def fail(self, duration: int) -> Optional[Truck]:
         """도어 고장 처리. 처리 중이던 트럭은 대기열로 반환."""

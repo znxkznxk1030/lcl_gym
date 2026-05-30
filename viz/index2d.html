@@ -199,14 +199,14 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
-      <optgroup label="── 2-Stage 8door · tick 순 (20ep 평균) ──">
-        <option value="sim_2stage_ga.json">🥇 GA  avg 202.1 tick  (seed42: 221)</option>
-        <option value="sim_2stage_heuristic.json">🥈 Heuristic  avg 209.2 tick  (seed42: 222)</option>
-        <option value="sim_2stage_mip.json">🥉 MILP  avg 211.6 tick  (seed42: 198)</option>
-        <option value="sim_2stage_fifo.json">FIFO  avg 211.6 tick  (seed42: 181)</option>
-        <option value="sim_2stage_greedy.json">Greedy  avg 211.6 tick  (seed42: 181)</option>
-        <option value="sim_2stage_random.json">Random  avg 211.4 tick  (seed42: 158)</option>
-        <option value="sim_2stage_rl.json">RL  avg 211.8 tick  (seed42: 181)</option>
+      <optgroup label="── 2-Stage 8door · 도킹 완료 후 종료 (20ep 평균) ──">
+        <option value="sim_2stage_mip.json">🥇 MILP  avg 191.8 tick  (seed42: 192)</option>
+        <option value="sim_2stage_heuristic.json">Heuristic  avg 196.3 tick  (seed42: 192)</option>
+        <option value="sim_2stage_random.json">Random  avg 197.1 tick  (seed42: 192)</option>
+        <option value="sim_2stage_fifo.json">FIFO  avg 196.9 tick  (seed42: 192)</option>
+        <option value="sim_2stage_greedy.json">Greedy  avg 196.9 tick  (seed42: 192)</option>
+        <option value="sim_2stage_rl.json">RL  avg 196.9 tick  (seed42: 192)</option>
+        <option value="sim_2stage_ga.json">GA  avg 196.9 tick  (seed42: 192)</option>
       </optgroup>
       <optgroup label="── MIP 8door ──">
         <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
@@ -264,6 +264,7 @@
   <div class="m"><b>Avg Fill</b><span id="hFill">0%</span></div>
   <div class="m"><b>Empty Dep</b><span id="hOvf">0</span></div>
   <div class="m"><b>Door Util</b><span id="hDoor">0%</span></div>
+  <div class="m" id="hOBQWrap" style="display:none;border-color:#7c3aed;background:#faf5ff"><b style="color:#7c3aed">OB Queue</b><span id="hOBQ" style="color:#7c3aed">0</span></div>
   <div class="m" id="hDisWrap" style="display:none"><b>Disruptions</b><span id="hDis">0</span></div>
 </div>
 
@@ -297,7 +298,7 @@
     <div class="modal-head">
       <div>
         <h2>정책 비교 리더보드</h2>
-        <div class="modal-sub" id="benchModalSub">benchmark_2stage_8door.json · 20 에피소드 평균 · ★ 목표: Total Ticks 최소화</div>
+        <div class="modal-sub" id="benchModalSub">benchmark_2stage_8door.json · 20 에피소드 평균 · Compound Truck · 도킹 완료 후 종료 · ★ 목표: Total Ticks 최소화</div>
       </div>
       <button class="modal-close" id="benchModalClose">✕</button>
     </div>
@@ -377,7 +378,8 @@ const cv = $("cv"), ctx = cv.getContext("2d"), vp = $("vp");
 let LW = 0, LH = 0;
 
 const S = { frames:[], idx:0, playing:false, fps:4, lastTick:0,
-            nD:8, nL:5, nOD:8, maxDep:28, inbScroll:0, totalTicks:0 };
+            nD:8, nL:5, nOD:8, maxDep:28, inbScroll:0, totalTicks:0,
+            compoundMode:false };
 
 // ── Canvas helpers ────────────────────────────────────────────
 function resize() {
@@ -429,7 +431,8 @@ function geo() {
 
   const waitH  = Math.min(LH * 0.14, 88);   // scrollable waiting queue (top)
   const matchH = Math.min(LH * 0.14, 86);   // at-dock matched trucks
-  const outH   = Math.min(LH * 0.18, 108);  // outbound trucks (bottom)
+  const queueBandH = S.compoundMode ? 22 : 0; // OB 대기열 표시 밴드 (compound 전용)
+  const outH   = Math.min(LH * 0.18, 108) + queueBandH;  // outbound trucks (bottom)
   const inbH   = waitH;                      // alias for scroll handler
   const bldTop = waitH + matchH;
   const bldBot = LH - outH;
@@ -453,7 +456,7 @@ function geo() {
 
   return { bldL,bldR,bldW,bldTop,bldBot,bldH,
            unlY,unlH,sortY,sortH,loadY,loadH,
-           waitH,matchH,inbH,outH,
+           waitH,matchH,inbH,outH,queueBandH,
            doorXs,laneXs,odXs,doorW,laneW,odW };
 }
 
@@ -532,13 +535,15 @@ function drawBuilding(g) {
 // ── Flow arrow (right side) ───────────────────────────────────
 function drawFlowArrow(g) {
   const x = g.bldR + 22;
+  const obQueueY = g.bldBot + (S.compoundMode ? g.queueBandH * 0.5 : g.outH * 0.25);
   const pts = [
     { y: g.waitH  * 0.45,           label: "waiting" },
     { y: g.waitH + g.matchH * 0.5,  label: "at dock" },
     { y: g.unlY + g.unlH  * 0.45,   label: "unload"  },
     { y: g.sortY + g.sortH * 0.5,   label: "sort"    },
     { y: g.loadY + g.loadH * 0.55,  label: "load"    },
-    { y: g.bldBot + g.outH * 0.55,  label: "outbound"},
+    ...(S.compoundMode ? [{ y: obQueueY,                      label: "ob queue" }] : []),
+    { y: g.bldBot + g.outH * 0.75,  label: "outbound"},
   ];
   ctx.save();
   ctx.strokeStyle = "rgba(150,144,138,.65)"; ctx.lineWidth = 1.5;
@@ -977,8 +982,37 @@ function drawLoadingZone(frame, g) {
 
 // ── Outbound trucks (below building, one slot per outbound door) ──
 function drawOutboundTrucks(frame, g) {
-  const {odXs, bldBot, outH, odW} = g;
+  const {odXs, bldBot, outH, queueBandH, odW, bldL, bldR, bldW} = g;
   const outboundDoors = frame.outbound_doors || [];
+  const waitCount = frame.outbound_waiting_count ?? 0;
+
+  // ── Compound mode: OB 대기열 밴드 (bldBot 직하단) ──────────────
+  if (S.compoundMode && queueBandH > 0) {
+    const qy = bldBot + 2;
+    const qh = queueBandH - 2;
+    // 배경
+    rrect(bldL, qy, bldW, qh, 3,
+      waitCount > 0 ? "rgba(124,58,237,.08)" : "rgba(200,196,188,.06)",
+      waitCount > 0 ? "rgba(124,58,237,.30)" : "rgba(200,196,188,.25)", 1);
+    // 트럭 아이콘들 (최대 20개, 이후 "+N" 뱃지)
+    const show = Math.min(waitCount, 20);
+    const iconW = 10, iconH = qh - 6, gap = 3;
+    const blockW = show * (iconW + gap);
+    let ix = bldL + (bldW - blockW) / 2;
+    for (let i = 0; i < show; i++) {
+      rrect(ix, qy + 3, iconW, iconH, 2, "rgba(124,58,237,.55)", null);
+      ix += iconW + gap;
+    }
+    if (waitCount > 20) {
+      txt(`+${waitCount - 20}`, ix + 2, qy + qh/2, 8, "#7c3aed", "left");
+    }
+    const label = waitCount > 0
+      ? `OB대기 ${waitCount}대`
+      : "OB대기 없음";
+    txt(label, bldL + 6, qy + qh/2, 9,
+      waitCount > 0 ? "#7c3aed" : "#c0bab2", "left");
+  }
+
   // legacy fallback: use lanes if no outbound_doors
   const useLegacy = outboundDoors.length === 0;
 
@@ -999,11 +1033,12 @@ function drawOutboundTrucks(frame, g) {
   const xs = useLegacy ? g.laneXs : odXs;
   const tW = useLegacy ? g.laneW  : odW;
   const cabH     = Math.max(7, tW * 0.16);
-  const trailerH = outH - cabH - 10;
+  const dockAreaH = outH - queueBandH;
+  const trailerH = dockAreaH - cabH - 10;
 
   slots.forEach(({fill, timer, dest, active}, i) => {
     const cx = xs[i], x = cx - tW/2;
-    const cabY     = bldBot + 4;
+    const cabY     = bldBot + queueBandH + 4;
     const trailerY = cabY + cabH + 2;
     const color    = LC[dest >= 0 ? dest : i] || "#888";
     const soon     = active && timer > 0 && timer <= 4;
@@ -1011,7 +1046,7 @@ function drawOutboundTrucks(frame, g) {
     if (!active) {
       rrect(x, trailerY, tW, trailerH, 3, "rgba(200,196,188,.10)", "rgba(200,196,188,.25)", 1);
       txt("idle", cx, trailerY + trailerH/2, 8, "#c0bab2");
-      txt(`OD${i+1}`, cx, bldBot+2, 7, "#c0bab2", "center", "top");
+      txt(`OD${i+1}`, cx, bldBot + queueBandH + 2, 7, "#c0bab2", "center", "top");
       return;
     }
 
@@ -1054,7 +1089,7 @@ function drawOutboundTrucks(frame, g) {
       const tc = tr < 0.25 ? "#b91c1c" : tr < 0.55 ? "#d97706" : "#15803d";
       rrect(x+3, barY, (tW-6)*tr, 4, 2, tc, null);
     }
-    txt(`T-${timer}`, cx, bldBot+2, 7, soon ? "#b91c1c" : "#67717d", "center", "top");
+    txt(`T-${timer}`, cx, bldBot + queueBandH + 2, 7, soon ? "#b91c1c" : "#67717d", "center", "top");
   });
 
   txt("outbound trucks", g.bldL, LH-2, 9, "#9ca3af", "left", "bottom");
@@ -1117,6 +1152,10 @@ function updateHud(frame) {
     $("tReadout").textContent = `t=${frame.t}`;
   }
 
+  const obq = frame.outbound_waiting_count;
+  $("hOBQWrap").style.display = (obq != null) ? "" : "none";
+  $("hOBQ").textContent = obq ?? 0;
+
   $("hDisWrap").style.display = dis > 0 ? "" : "none";
   $("hDis").textContent = dis;
 }
@@ -1170,6 +1209,9 @@ function applyData(data, src) {
         ...(f.outbound_doors||[]).map(od => od.loading_timer||0),
         ...(f.lanes||[]).map(l => l.outbound_departure_timer||0),
       ]));
+
+  // compound 모드 감지: 첫 프레임에 outbound_waiting_count 필드가 있으면 compound
+  S.compoundMode = (data.frames[0]?.outbound_waiting_count != null);
 
   // totalTicks: meta에 있으면 우선 사용, 없으면 마지막 프레임의 t값
   S.totalTicks = Number(
@@ -1472,15 +1514,15 @@ const POLICY_COLORS = {
   random:"#9333ea", fifo:"#2563eb", greedy:"#0891b2",
   heuristic:"#d97706", mip:"#dc2626", rl:"#16a34a", ga:"#0f766e",
 };
-// 정책명 → viz JSON 파일명 매핑
+// 정책명 → viz JSON 파일명 매핑 (compound truck 모드)
 const POLICY_JSON = {
   random:"sim_2stage_random.json", fifo:"sim_2stage_fifo.json",
   greedy:"sim_2stage_greedy.json", heuristic:"sim_2stage_heuristic.json",
   mip:"sim_2stage_mip.json", rl:"sim_2stage_rl.json", ga:"sim_2stage_ga.json",
 };
-// seed=42 단일 시뮬레이션 tick (viz JSON 기준)
+// seed=42 단일 시뮬레이션 tick (viz JSON 기준, 2-stage 8door)
 const POLICY_SIM_TICKS = {
-  random:158, fifo:181, greedy:181, heuristic:222, mip:198, rl:181, ga:221,
+  random:192, fifo:192, greedy:192, heuristic:192, mip:192, rl:192, ga:192,
 };
 
 async function openBenchModal() {
@@ -1567,7 +1609,9 @@ async function openBenchModal() {
       </table>
     </div>
     <div class="bench-legend">
-      ★ Avg Ticks = 20 에피소드 평균 (seed 0~19) · Sim Ticks = 단일 시뮬레이션 seed=42 · 행 클릭 시 해당 시뮬레이션 로드
+      ★ Compound Truck 모드: 인바운드 처리 완료 후 동일 차량이 아웃바운드 도크 대기 → 로딩 → 출발<br>
+      종료 조건: 레인 빔 + 현재 도킹 중 로딩 트럭 출발 완료 (미배정 대기 트럭 제외)<br>
+      Avg Ticks = 20 에피소드 평균 (seed 0~19) · Sim Ticks = seed=42 · 행 클릭 시 해당 시뮬레이션 로드
     </div>`;
 
   // 행 클릭 → 시뮬레이션 로드 후 모달 닫기

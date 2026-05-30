@@ -28,7 +28,8 @@ CFG_8D = {
     "num_outbound_doors": 8,
     "arrival_count_min": 67,
     "arrival_count_max": 94,
-    "all_trucks_at_start": True,        # 모든 트럭을 t=0에 일괄 대기
+    "all_trucks_at_start": True,
+    "compound_trucks": False,
 }
 
 N_BENCH = 20   # 벤치마크 에피소드 수
@@ -85,6 +86,7 @@ def capture_frame(env, actions, rewards):
                   if od.is_busy and od.assigned_dest == k), None)}
             for k, lane in enumerate(env.lanes)
         ],
+        "outbound_waiting_count": len(getattr(env, "outbound_waiting", [])),
         "actions": list(actions),
         "rewards": [float(r) for r in rewards],
         "disruptions": list(env.disruption_log),
@@ -176,8 +178,9 @@ for name, factory in BASELINE_POLICIES.items():
 
     # viz JSON (seed=42 단일 에피소드)
     frames, metrics, env = run_episode_frames(factory, CFG_8D, seed=SEED_EVAL)
+    prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
     save_viz_json(frames, metrics, env, name, SEED_EVAL,
-                  os.path.join(VIZ_DIR, f"sim_2stage_{name}.json"))
+                  os.path.join(VIZ_DIR, f"{prefix}_{name}.json"))
 
 # ─────────────────────────────────────────────────────────────────
 # 2. MILP
@@ -278,8 +281,9 @@ try:
             actions_viz = [0] * env_viz.num_lanes
         obs_viz, rewards_viz, done_viz, _ = env_viz.step(actions_viz)
         frames_mip.append(mip_cap(env_viz, actions_viz, rewards_viz))
+    _prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
     save_viz_json(frames_mip, env_viz.metrics, env_viz, "mip", SEED_EVAL,
-                  os.path.join(VIZ_DIR, "sim_2stage_mip.json"))
+                  os.path.join(VIZ_DIR, f"{_prefix}_mip.json"))
 except ImportError as e:
     print(f"  MILP 건너뜀 (pulp 미설치): {e}")
 
@@ -314,9 +318,10 @@ tk = bench_results["rl"]["total_ticks"]
 print(f"  {'rl':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
 # RL viz JSON
+_prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
 frames_rl, metrics_rl, env_rl = run_episode_frames(rl_factory, CFG_8D, seed=SEED_EVAL)
-save_viz_json(frames_rl, metrics_rl, env_rl, "rl_2stage", SEED_EVAL,
-              os.path.join(VIZ_DIR, "sim_2stage_rl.json"))
+save_viz_json(frames_rl, metrics_rl, env_rl, "rl", SEED_EVAL,
+              os.path.join(VIZ_DIR, f"{_prefix}_rl.json"))
 
 # ─────────────────────────────────────────────────────────────────
 # 4. GA 학습 (8-Door 2-Stage)
@@ -346,9 +351,10 @@ tk = bench_results["ga"]["total_ticks"]
 print(f"  {'ga':12s}  ticks={tk['mean']:>7.1f}±{tk['std']:<5.1f}")
 
 # GA viz JSON
+_prefix = "sim_compound" if CFG_8D.get("compound_trucks") else "sim_2stage"
 frames_ga, metrics_ga, env_ga = run_episode_frames(ga_factory, CFG_8D, seed=SEED_EVAL)
-save_viz_json(frames_ga, metrics_ga, env_ga, "ga_2stage", SEED_EVAL,
-              os.path.join(VIZ_DIR, "sim_2stage_ga.json"))
+save_viz_json(frames_ga, metrics_ga, env_ga, "ga", SEED_EVAL,
+              os.path.join(VIZ_DIR, f"{_prefix}_ga.json"))
 
 # GA 유전자 저장
 ga_genes_path = os.path.join(ROOT, "ga", "best_genes_2stage.json")
