@@ -199,6 +199,15 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── Lane-mode 3-action · 3door · disruption (20ep 평균) [20260531_004] ──">
+        <option value="20260531_004/sim_2stage_rl.json">🥇 RL  avg 339.3 tick  (seed42: 345)</option>
+        <option value="20260531_004/sim_2stage_random.json">Random  avg 340.6 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_fifo.json">FIFO  avg 340.9 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_mip.json">MILP  avg 340.8 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_heuristic.json">Heuristic  avg 347.6 tick  (seed42: 350)</option>
+        <option value="20260531_004/sim_2stage_ga.json">GA  avg 348.6 tick  (seed42: 362)</option>
+        <option value="20260531_004/sim_2stage_greedy.json">Greedy  avg 349.2 tick  (seed42: 350)</option>
+      </optgroup>
       <optgroup label="── Truck-Selection · 3door · 동적입고 · disruption (20ep 평균) [20260531] ──">
         <option value="20260531_002/sim_2stage_random.json">Random  avg 327.1 tick  (seed42: 336)</option>
         <option value="20260531_002/sim_2stage_fifo.json">FIFO  avg 327.1 tick  (seed42: 336)</option>
@@ -307,7 +316,7 @@
     <div class="modal-head">
       <div>
         <h2>정책 비교 리더보드</h2>
-        <div class="modal-sub" id="benchModalSub">benchmark_2stage_8door.json · 20 에피소드 평균 · Compound Truck · 도킹 완료 후 종료 · ★ 목표: Total Ticks 최소화</div>
+        <div class="modal-sub" id="benchModalSub">benchmark_2stage_8door.json [20260531_004] · 20 에피소드 평균 · Lane-mode 3-action · 3 outbound doors · disruption · ★ 목표: Total Ticks 최소화</div>
       </div>
       <button class="modal-close" id="benchModalClose">✕</button>
     </div>
@@ -1523,15 +1532,15 @@ const POLICY_COLORS = {
   random:"#9333ea", fifo:"#2563eb", greedy:"#0891b2",
   heuristic:"#d97706", mip:"#dc2626", rl:"#16a34a", ga:"#0f766e",
 };
-// 정책명 → viz JSON 파일명 매핑 (truck-selection · 3door · 동적입고 · disruption [20260531_002])
+// 정책명 → viz JSON 파일명 매핑 (lane-mode 3-action · 3door · disruption [20260531_004])
 const POLICY_JSON = {
-  random:"20260531_002/sim_2stage_random.json", fifo:"20260531_002/sim_2stage_fifo.json",
-  greedy:"20260531_002/sim_2stage_greedy.json", heuristic:"20260531_002/sim_2stage_heuristic.json",
-  mip:"20260531_002/sim_2stage_mip.json", rl:"20260531_002/sim_2stage_rl.json", ga:"20260531_002/sim_2stage_ga.json",
+  random:"20260531_004/sim_2stage_random.json", fifo:"20260531_004/sim_2stage_fifo.json",
+  greedy:"20260531_004/sim_2stage_greedy.json", heuristic:"20260531_004/sim_2stage_heuristic.json",
+  mip:"20260531_004/sim_2stage_mip.json", rl:"20260531_004/sim_2stage_rl.json", ga:"20260531_004/sim_2stage_ga.json",
 };
-// seed=42 단일 시뮬레이션 tick (viz JSON 기준, truck-selection · 3door · disruption [20260531_002])
+// seed=42 단일 시뮬레이션 tick (viz JSON 기준, lane-mode 3-action · 3door · disruption [20260531_004])
 const POLICY_SIM_TICKS = {
-  random:336, fifo:336, greedy:336, heuristic:336, mip:336, rl:336, ga:336,
+  random:353, fifo:353, greedy:350, heuristic:350, mip:353, rl:345, ga:362,
 };
 
 async function openBenchModal() {
@@ -1541,7 +1550,7 @@ async function openBenchModal() {
 
   let data;
   try {
-    const res = await fetch("20260531_002/benchmark_2stage_8door.json", {cache:"no-store"});
+    const res = await fetch("20260531_004/benchmark_2stage_8door.json", {cache:"no-store"});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch(e) {

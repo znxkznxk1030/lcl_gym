@@ -571,10 +571,12 @@ class CrossDockEnv:
             return
 
         # 빈 레인을 서비스 중인 도크 (화물 다 빠져나간 뒤 타이머만 남음)
+        # od.loaded == 0 조건: 이미 로딩된 화물이 있으면 재배정하지 않음 (화물 소실 방지)
         empty_serving = [
             od for od in self.outbound_doors
             if od.is_busy and od.assigned_dest >= 0
             and self.lanes[od.assigned_dest].queue_volume == 0
+            and od.loaded == 0
         ]
         if not empty_serving:
             return
