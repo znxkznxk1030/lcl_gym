@@ -153,11 +153,26 @@ numpy 기반 2층 MLP를 5개 레인 에이전트가 가중치 공유하여 학�
 입력(9+D) → Linear(64) → ReLU → Linear(3) → Q값 {Q_skip, Q_inbound, Q_outbound}
 ```
 
+- **알고리즘**: IQL (Independent Q-Learning) + Parameter Sharing — 5개 에이전트가 동일 가중치 공유, 각자 독립적으로 행동
 - **학습**: 2000 에피소드, lr=0.001, γ=0.99, ε: 1.0→0.05 (decay 0.995)
-- **Target Network**: 50 에피소드마다 동기화
+- **Target Network**: 50 에피소드마다 $\theta^- \leftarrow \theta$ 동기화
 - **리플레이 버퍼**: 용량 10,000, 배치 64
 - **Reward Shaping**: `needs_dock`(화물 있는데 도크 없음) 상황에서 action=2 보너스 +0.8
 - 가중치 저장: `checkpoints_2stage_8door/weights_final.npz`
+
+**성능 우위 요인**
+
+RL outperformed rule-based policies by learning two key behaviors: redirecting idle docks away from empty lanes toward lanes that actually had cargo waiting, and adapting more effectively to dynamic disruptions such as sudden door failures.
+
+**실험의 한계**
+
+| 한계 | 설명 |
+|---|---|
+| 출발 모델 단순화 | 도크가 고정 타이머 만료 시 출발 → 실제 만차 출발·cut-off 방식과 차이, action=2 효과 과대평가 가능 |
+| 화물 분류 자동화 | 하역 즉시 정확하게 레인으로 분류 → 실제 수작업 오류·지연 미반영 |
+| 제한적 돌발 유형 | 도어 고장만 모델링 → 트럭 지연·긴급 화물·작업자 부족 등 미포함 |
+| 소규모 환경 | 5레인·3도어·50~70대 트럭 → 대형 터미널 확장성 미검증 |
+| 근시안적 보상 | 스텝별 출발 화물량 기준 → 납기 준수·레인 부하 균형 등 장기 목표 미최적화 |
 
 ### GA (Genetic Algorithm, 7-gene)
 
