@@ -157,6 +157,33 @@
     }
     .dep-scroll { max-height:340px; overflow-y:auto; border:1px solid var(--line);
                   border-radius:8px; }
+
+    /* ── Benchmark Modal ── */
+    .bench-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .bench-table th {
+      background:#f0ece3; padding:8px 12px; text-align:left; font-weight:700;
+      font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+      border-bottom:1px solid var(--line); position:sticky; top:0;
+    }
+    .bench-table th.r, .bench-table td.r { text-align:right; }
+    .bench-table td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+    .bench-table tr:last-child td { border-bottom:none; }
+    .bench-table tr:hover td { background:#faf7f0; }
+    .bench-table tr.current-policy td { background:#f0faf9; }
+    .bench-rank { display:inline-block; width:22px; height:22px; border-radius:50%;
+                  text-align:center; line-height:22px; font-size:11px; font-weight:760;
+                  background:#ede9e0; color:var(--muted); }
+    .bench-rank.gold   { background:#fef08a; color:#92400e; }
+    .bench-rank.silver { background:#e2e8f0; color:#475569; }
+    .bench-rank.bronze { background:#fde8c8; color:#92400e; }
+    .bench-bar-wrap { height:8px; border-radius:4px; background:#ede9e0; overflow:hidden;
+                      width:120px; display:inline-block; vertical-align:middle; margin-right:8px; }
+    .bench-bar-fill { height:100%; border-radius:4px; background:var(--accent); }
+    .bench-policy-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
+                        margin-right:6px; vertical-align:middle; }
+    .bench-scroll { max-height:400px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; }
+    .bench-legend { font-size:11px; color:var(--muted); margin-top:10px;
+                    padding-top:10px; border-top:1px solid var(--line); }
   </style>
 </head>
 <body>
@@ -165,11 +192,40 @@
     <h1>Cross-Dock 2D Viewer</h1>
     <div class="subline">
       <span id="mPolicy">policy: -</span><span id="mSeed">seed: -</span>
-      <span id="mSteps">steps: -</span><span id="mSrc">source: -</span>
+      <span id="mSteps">steps: -</span>
+      <span id="mTicks" style="font-weight:700;color:var(--accent)">ticks: -</span>
+      <span id="mSrc">source: -</span>
     </div>
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── Lane-mode 3-action · 3door · disruption (20ep 평균) [20260531_004] ──">
+        <option value="20260531_004/sim_2stage_rl.json">🥇 RL  avg 339.3 tick  (seed42: 345)</option>
+        <option value="20260531_004/sim_2stage_random.json">Random  avg 340.6 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_fifo.json">FIFO  avg 340.9 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_mip.json">MILP  avg 340.8 tick  (seed42: 353)</option>
+        <option value="20260531_004/sim_2stage_heuristic.json">Heuristic  avg 347.6 tick  (seed42: 350)</option>
+        <option value="20260531_004/sim_2stage_ga.json">GA  avg 348.6 tick  (seed42: 362)</option>
+        <option value="20260531_004/sim_2stage_greedy.json">Greedy  avg 349.2 tick  (seed42: 350)</option>
+      </optgroup>
+      <optgroup label="── Truck-Selection · 3door · 동적입고 · disruption (20ep 평균) [20260531] ──">
+        <option value="20260531_002/sim_2stage_random.json">Random  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_fifo.json">FIFO  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_greedy.json">Greedy  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_heuristic.json">Heuristic  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_mip.json">MILP  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_rl.json">RL  avg 327.1 tick  (seed42: 336)</option>
+        <option value="20260531_002/sim_2stage_ga.json">GA  avg 327.1 tick  (seed42: 336)</option>
+      </optgroup>
+      <optgroup label="── 2-Stage 8door · 작업자부족 disruption (20ep 평균) ──">
+        <option value="sim_2stage_mip.json">🥇 MILP  avg 195.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_random.json">Random  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_fifo.json">FIFO  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_greedy.json">Greedy  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_rl.json">RL  avg 200.8 tick  (seed42: 198)</option>
+        <option value="sim_2stage_heuristic.json">Heuristic  avg 201.5 tick  (seed42: 198)</option>
+        <option value="sim_2stage_ga.json">GA  avg 201.5 tick  (seed42: 198)</option>
+      </optgroup>
       <optgroup label="── MIP 8door ──">
         <option value="sim_mip_8door_baseline.json">MIP 8door baseline</option>
         <option value="sim_mip_8door_door_failure.json">MIP 8door door failure</option>
@@ -197,6 +253,9 @@
         <option value="sim_fifo.json">FIFO</option>
       </optgroup>
     </select>
+    <button id="btnBench" class="file-label" title="정책 비교 리더보드" style="gap:5px;border-color:var(--accent);color:var(--accent)">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M7 17H2v-5h5v5Zm6 2H8V9h5v10Zm6 2h-5V5h5v16Z"/></svg>리더보드
+    </button>
     <button id="btnDep" class="file-label" title="출고 트럭 기록" style="gap:5px;">
       <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2a3 3 0 0 0 6 0h6a3 3 0 0 0 6 0h2v-5l-3-4zm-.5 1.5 1.96 2.5H17V9.5h2.5zM6 18.5A1.5 1.5 0 1 1 7.5 17 1.5 1.5 0 0 1 6 18.5zm11 0A1.5 1.5 0 1 1 18.5 17 1.5 1.5 0 0 1 17 18.5z"/></svg>출고 기록
     </button>
@@ -211,14 +270,19 @@
 </header>
 
 <div class="mbar">
+  <div class="m" id="hTicksWrap" style="border-color:var(--accent);background:#f0faf9">
+    <b style="color:var(--accent)">Total Ticks ↓</b>
+    <span id="hTicks" style="color:var(--accent)">—</span>
+  </div>
   <div class="m"><b>Step</b><span id="hStep">0</span></div>
-  <div class="m"><b>Buffer</b><span id="hBuf">0/0</span></div>
+  <div class="m"><b>Buffer</b><span id="hBuf">0 cbm</span></div>
   <div class="m"><b>Waiting</b><span id="hWait">0</span></div>
   <div class="m"><b>Scheduled</b><span id="hSched">0</span></div>
   <div class="m"><b>Throughput</b><span id="hThru">0</span></div>
   <div class="m"><b>Avg Fill</b><span id="hFill">0%</span></div>
-  <div class="m warn"><b>Overflow</b><span id="hOvf">0</span></div>
+  <div class="m"><b>Empty Dep</b><span id="hOvf">0</span></div>
   <div class="m"><b>Door Util</b><span id="hDoor">0%</span></div>
+  <div class="m" id="hOBQWrap" style="display:none;border-color:#7c3aed;background:#faf5ff"><b style="color:#7c3aed">OB Queue</b><span id="hOBQ" style="color:#7c3aed">0</span></div>
   <div class="m" id="hDisWrap" style="display:none"><b>Disruptions</b><span id="hDis">0</span></div>
 </div>
 
@@ -237,7 +301,7 @@
     <input id="slider" type="range" min="0" max="100" value="0" />
     <div class="ticks"><span>0</span><span id="tickEnd">100</span></div>
   </div>
-  <div id="tReadout" class="tr">t=0</div>
+  <div id="tReadout" class="tr" title="현재 스텝 / 총 ticks">t=0</div>
   <select id="spd">
     <option value="2">2 fps</option>
     <option value="4" selected>4 fps</option>
@@ -245,6 +309,24 @@
     <option value="16">16 fps</option>
   </select>
 </footer>
+
+<!-- ── Benchmark Modal ──────────────────────────────── -->
+<div class="modal-backdrop" id="benchModal">
+  <div class="modal" style="width:min(700px,96vw)">
+    <div class="modal-head">
+      <div>
+        <h2>정책 비교 리더보드</h2>
+        <div class="modal-sub" id="benchModalSub">benchmark_2stage_8door.json [20260531_004] · 20 에피소드 평균 · Lane-mode 3-action · 3 outbound doors · disruption · ★ 목표: Total Ticks 최소화</div>
+      </div>
+      <button class="modal-close" id="benchModalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="benchContent">
+        <div style="text-align:center;padding:32px;color:var(--muted)">로드 중…</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Departure Modal ───────────────────────────────── -->
 <div class="modal-backdrop" id="depModal">
@@ -297,7 +379,7 @@
         <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div>출고 완료</div>
         <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div>시스템 잔류</div>
         <div class="legend-item" style="margin-left:auto;color:var(--muted);font-size:10px;">
-          잔류 = 레인 큐 + 아웃바운드 적재 + 대기 트럭 + 도어 처리 중
+          잔류 = 레인 큐 + 아웃바운드 적재 + 대기 트럭 + 도어 처리 중  ·  버퍼 무제한
         </div>
       </div>
     </div>
@@ -314,7 +396,8 @@ const cv = $("cv"), ctx = cv.getContext("2d"), vp = $("vp");
 let LW = 0, LH = 0;
 
 const S = { frames:[], idx:0, playing:false, fps:4, lastTick:0,
-            nD:8, nL:5, maxDep:28, inbScroll:0 };
+            nD:8, nL:5, nOD:8, maxDep:28, inbScroll:0, totalTicks:0,
+            compoundMode:false };
 
 // ── Canvas helpers ────────────────────────────────────────────
 function resize() {
@@ -366,7 +449,8 @@ function geo() {
 
   const waitH  = Math.min(LH * 0.14, 88);   // scrollable waiting queue (top)
   const matchH = Math.min(LH * 0.14, 86);   // at-dock matched trucks
-  const outH   = Math.min(LH * 0.18, 108);  // outbound trucks (bottom)
+  const queueBandH = S.compoundMode ? 22 : 0; // OB 대기열 표시 밴드 (compound 전용)
+  const outH   = Math.min(LH * 0.18, 108) + queueBandH;  // outbound trucks (bottom)
   const inbH   = waitH;                      // alias for scroll handler
   const bldTop = waitH + matchH;
   const bldBot = LH - outH;
@@ -380,16 +464,18 @@ function geo() {
   const sortY = unlY + unlH;
   const loadY = sortY + sortH;
 
-  const doorXs = Array.from({length:S.nD}, (_,i) => bldL + bldW*(i+1)/(S.nD+1));
-  const laneXs = Array.from({length:S.nL}, (_,i) => bldL + bldW*(i+1)/(S.nL+1));
+  const doorXs = Array.from({length:S.nD},  (_,i) => bldL + bldW*(i+1)/(S.nD+1));
+  const laneXs = Array.from({length:S.nL},  (_,i) => bldL + bldW*(i+1)/(S.nL+1));
+  const odXs   = Array.from({length:S.nOD}, (_,i) => bldL + bldW*(i+1)/(S.nOD+1));
 
-  const doorW = Math.min(54, bldW/(S.nD+1) * 0.84);
-  const laneW = Math.min(58, bldW/(S.nL+1) * 0.84);
+  const doorW = Math.min(54, bldW/(S.nD+1)  * 0.84);
+  const laneW = Math.min(58, bldW/(S.nL+1)  * 0.84);
+  const odW   = Math.min(54, bldW/(S.nOD+1) * 0.84);
 
   return { bldL,bldR,bldW,bldTop,bldBot,bldH,
            unlY,unlH,sortY,sortH,loadY,loadH,
-           waitH,matchH,inbH,outH,
-           doorXs,laneXs,doorW,laneW };
+           waitH,matchH,inbH,outH,queueBandH,
+           doorXs,laneXs,odXs,doorW,laneW,odW };
 }
 
 // ── Main draw ─────────────────────────────────────────────────
@@ -416,7 +502,7 @@ function drawFrame(frame) {
 function drawBuilding(g) {
   const {bldL,bldR,bldW,bldTop,bldBot,bldH,
          unlY,unlH,sortY,sortH,loadY,loadH,
-         doorXs,laneXs,doorW,laneW} = g;
+         doorXs,laneXs,odXs,doorW,laneW,odW} = g;
 
   rrect(bldL, bldTop, bldW, bldH, 0, "#e8e3d8", null);
 
@@ -455,10 +541,10 @@ function drawBuilding(g) {
     ctx.fillRect(x - doorW/2, bldTop - 2, doorW, 6);
   });
 
-  // outbound dock notches — BOTTOM wall, one per lane, width = laneW
-  laneXs.forEach(x => {
+  // outbound dock notches — BOTTOM wall, one per outbound door, width = odW
+  odXs.forEach(x => {
     ctx.fillStyle = "#f4f1ea";
-    ctx.fillRect(x - laneW/2, bldBot - 2, laneW, 6);
+    ctx.fillRect(x - odW/2, bldBot - 2, odW, 6);
   });
 
   drawFlowArrow(g);
@@ -467,13 +553,15 @@ function drawBuilding(g) {
 // ── Flow arrow (right side) ───────────────────────────────────
 function drawFlowArrow(g) {
   const x = g.bldR + 22;
+  const obQueueY = g.bldBot + (S.compoundMode ? g.queueBandH * 0.5 : g.outH * 0.25);
   const pts = [
     { y: g.waitH  * 0.45,           label: "waiting" },
     { y: g.waitH + g.matchH * 0.5,  label: "at dock" },
     { y: g.unlY + g.unlH  * 0.45,   label: "unload"  },
     { y: g.sortY + g.sortH * 0.5,   label: "sort"    },
     { y: g.loadY + g.loadH * 0.55,  label: "load"    },
-    { y: g.bldBot + g.outH * 0.55,  label: "outbound"},
+    ...(S.compoundMode ? [{ y: obQueueY,                      label: "ob queue" }] : []),
+    { y: g.bldBot + g.outH * 0.75,  label: "outbound"},
   ];
   ctx.save();
   ctx.strokeStyle = "rgba(150,144,138,.65)"; ctx.lineWidth = 1.5;
@@ -553,7 +641,7 @@ function _arrowHead(x, y, dx, dy, size) {
 
 // ── Cargo flow indicators (active when cargo is moving) ────────
 function drawFlowIndicators(frame, g) {
-  const {doorXs,laneXs,waitH,matchH,bldTop,unlY,unlH,sortY,loadY,loadH,bldBot,doorW,laneW} = g;
+  const {doorXs,laneXs,odXs,waitH,matchH,bldTop,unlY,unlH,sortY,loadY,loadH,bldBot,doorW,laneW,odW} = g;
   const doors = frame.doors || [];
   const lanes = frame.lanes || [];
   const dashOffset = -(frame.t * 4 % 14);
@@ -590,29 +678,47 @@ function drawFlowIndicators(frame, g) {
     _arrowHead(cx, y2, 0, 1, 5);
   });
 
-  // ── B. Loading zone → Outbound truck (per lane with queue) ──
+  // ── B. Loading zone → Outbound door (per lane with queue → serving door position) ──
+  const outboundDoors = frame.outbound_doors || [];
   lanes.forEach((lane, i) => {
     const queue = lane.queue_volume || 0;
     if (queue < 0.5) return;
-    const color  = LC[i] || "#888";
-    const cx = laneXs[i];
+    const color = LC[i] || "#888";
+    const lx = laneXs[i];
     const y1 = loadY + loadH * 0.65;
-    const y2 = bldBot + 2;
 
-    ctx.strokeStyle = hex2rgba(color, 0.55);
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4,3]);
-    ctx.lineDashOffset = dashOffset;
-    ctx.beginPath(); ctx.moveTo(cx, y1); ctx.lineTo(cx, y2); ctx.stroke();
-    ctx.setLineDash([]);
+    // find which outbound door(s) serve this lane
+    const servingDoors = outboundDoors
+      .map((od, j) => ({od, j}))
+      .filter(({od}) => od.is_busy && od.assigned_dest === i);
 
-    ctx.fillStyle = hex2rgba(color, 0.75);
-    _arrowHead(cx, y2, 0, 1, 5);
+    if (servingDoors.length === 0) {
+      // legacy / no door assigned — draw straight down to building bottom
+      const y2 = bldBot + 2;
+      ctx.strokeStyle = hex2rgba(color, 0.40); ctx.lineWidth = 2;
+      ctx.setLineDash([4,3]); ctx.lineDashOffset = dashOffset;
+      ctx.beginPath(); ctx.moveTo(lx, y1); ctx.lineTo(lx, y2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = hex2rgba(color, 0.60); _arrowHead(lx, y2, 0, 1, 4);
+    } else {
+      // draw arc from lane to each serving door
+      servingDoors.forEach(({j}) => {
+        const tx = g.odXs[j];
+        const y2 = bldBot + 2;
+        const my = (y1 + y2) / 2;
+        ctx.strokeStyle = hex2rgba(color, 0.55); ctx.lineWidth = 2;
+        ctx.setLineDash([4,3]); ctx.lineDashOffset = dashOffset;
+        ctx.beginPath(); ctx.moveTo(lx, y1);
+        ctx.bezierCurveTo(lx, my, tx, my, tx, y2);
+        ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = hex2rgba(color, 0.75); _arrowHead(tx, y2, 0, 1, 4);
+      });
+    }
 
-    // queue volume badge
-    const bw = 36, bh = 14, bx = cx - bw/2, by = (y1+y2)/2 - bh/2;
+    // queue volume badge at lane position
+    const bw = 36, bh = 14, bx = lx - bw/2, by = (y1 + bldBot)/2 - bh/2;
     rrect(bx, by, bw, bh, 3, hex2rgba(color, 0.15), hex2rgba(color, 0.50), 1);
-    txt(`${queue.toFixed(0)}cbm`, cx, by + bh/2, 8, "#1d2329");
+    txt(`${queue.toFixed(0)}cbm`, lx, by + bh/2, 8, "#1d2329");
   });
 
   ctx.restore();
@@ -843,22 +949,22 @@ function drawUnloadingZone(frame, g) {
 // ── Sorting zone (buffer, horizontal fill bar) ────────────────
 function drawSortingZone(frame, g) {
   const {bldL, bldW, sortY, sortH} = g;
-  const cap  = frame.buffer_capacity || 60;
-  const buf  = frame.buffer || 0;
-  const fill = Math.min(1, buf / cap);
+  const buf = frame.buffer || 0;
+  // 무한 버퍼: 레인 큐 합계를 기준으로 바 채움 비율 계산 (시각적 가늠자)
+  const laneTotal = (frame.lanes||[]).reduce((s,l)=>s+(l.queue_volume||0), 0);
+  const refMax = Math.max(laneTotal * 2, buf, 50);  // 동적 기준선
+  const fill = Math.min(1, buf / refMax);
   const px = bldL+16, pw = bldW-32, ph = sortH-14, py = sortY+7;
 
   rrect(px, py, pw, ph, 4, "rgba(15,118,110,.08)", "rgba(15,118,110,.40)", 1.5);
   if (fill > 0.01) {
     const fw = (pw-6)*fill;
-    const fc = fill > 0.92 ? "#b91c1c" : fill > 0.72 ? "#d97706" : "#0f766e";
-    rrect(px+3, py+3, fw, ph-6, 3, hex2rgba(fc,.80), null);
+    rrect(px+3, py+3, fw, ph-6, 3, hex2rgba("#0f766e",.80), null);
     ctx.fillStyle = "rgba(255,255,255,.55)";
     ctx.fillRect(px+3+fw-2, py+3, 2, ph-6);
   }
-  const pct   = Math.round(fill*100);
-  const label = `BUFFER  ${Math.round(buf)} / ${Math.round(cap)} CBM  (${pct}%)`;
-  txt(label, px+pw/2, py+ph/2, 11, fill > 0.72 ? "#7c2d12" : "#1d2329");
+  const label = `BUFFER  ${Math.round(buf)} CBM  (무제한)`;
+  txt(label, px+pw/2, py+ph/2, 11, "#1d2329");
 }
 
 // ── Loading zone (lanes, bottom of building) ──────────────────
@@ -892,30 +998,86 @@ function drawLoadingZone(frame, g) {
   });
 }
 
-// ── Outbound trucks (below building, aligned with lanes) ──────
+// ── Outbound trucks (below building, one slot per outbound door) ──
 function drawOutboundTrucks(frame, g) {
-  const {laneXs,bldBot,outH,laneW} = g;
-  const lanes = frame.lanes || [];
-  const tW    = laneW;
-  const cabH  = Math.max(8, tW * 0.18);
-  const trailerH = outH - cabH - 10;
+  const {odXs, bldBot, outH, queueBandH, odW, bldL, bldR, bldW} = g;
+  const outboundDoors = frame.outbound_doors || [];
+  const waitCount = frame.outbound_waiting_count ?? 0;
 
-  lanes.forEach((lane, i) => {
-    const cx = laneXs[i], x = cx - tW/2;
-    const cabY     = bldBot + 4;
+  // ── Compound mode: OB 대기열 밴드 (bldBot 직하단) ──────────────
+  if (S.compoundMode && queueBandH > 0) {
+    const qy = bldBot + 2;
+    const qh = queueBandH - 2;
+    // 배경
+    rrect(bldL, qy, bldW, qh, 3,
+      waitCount > 0 ? "rgba(124,58,237,.08)" : "rgba(200,196,188,.06)",
+      waitCount > 0 ? "rgba(124,58,237,.30)" : "rgba(200,196,188,.25)", 1);
+    // 트럭 아이콘들 (최대 20개, 이후 "+N" 뱃지)
+    const show = Math.min(waitCount, 20);
+    const iconW = 10, iconH = qh - 6, gap = 3;
+    const blockW = show * (iconW + gap);
+    let ix = bldL + (bldW - blockW) / 2;
+    for (let i = 0; i < show; i++) {
+      rrect(ix, qy + 3, iconW, iconH, 2, "rgba(124,58,237,.55)", null);
+      ix += iconW + gap;
+    }
+    if (waitCount > 20) {
+      txt(`+${waitCount - 20}`, ix + 2, qy + qh/2, 8, "#7c3aed", "left");
+    }
+    const label = waitCount > 0
+      ? `OB대기 ${waitCount}대`
+      : "OB대기 없음";
+    txt(label, bldL + 6, qy + qh/2, 9,
+      waitCount > 0 ? "#7c3aed" : "#c0bab2", "left");
+  }
+
+  // legacy fallback: use lanes if no outbound_doors
+  const useLegacy = outboundDoors.length === 0;
+
+  const slots = useLegacy
+    ? (frame.lanes||[]).map((lane, i) => ({
+        fill:   Math.min(1, lane.outbound_fill_rate || 0),
+        timer:  lane.outbound_departure_timer || 0,
+        dest:   i,
+        active: true,
+      }))
+    : outboundDoors.map(od => ({
+        fill:   Math.min(1, od.fill_rate || 0),
+        timer:  od.loading_timer || 0,
+        dest:   od.assigned_dest,
+        active: od.is_busy,
+      }));
+
+  const xs = useLegacy ? g.laneXs : odXs;
+  const tW = useLegacy ? g.laneW  : odW;
+  const cabH     = Math.max(7, tW * 0.16);
+  const dockAreaH = outH - queueBandH;
+  const trailerH = dockAreaH - cabH - 10;
+
+  slots.forEach(({fill, timer, dest, active}, i) => {
+    const cx = xs[i], x = cx - tW/2;
+    const cabY     = bldBot + queueBandH + 4;
     const trailerY = cabY + cabH + 2;
-    const fill  = Math.min(1, lane.outbound_fill_rate || 0);
-    const timer = lane.outbound_departure_timer || 0;
-    const color = LC[i] || "#888";
-    const soon  = timer <= 4;
+    const color    = LC[dest >= 0 ? dest : i] || "#888";
+    const soon     = active && timer > 0 && timer <= 4;
 
-    // cab at TOP (truck backed into dock from below)
+    if (!active) {
+      rrect(x, trailerY, tW, trailerH, 3, "rgba(200,196,188,.10)", "rgba(200,196,188,.25)", 1);
+      txt("idle", cx, trailerY + trailerH/2, 8, "#c0bab2");
+      txt(`OD${i+1}`, cx, bldBot + queueBandH + 2, 7, "#c0bab2", "center", "top");
+      return;
+    }
+
+    // cab
     rrect(x+tW*.12, cabY, tW*.76, cabH-2, 3, "#3c4146", null);
+    // dest color stripe on cab
+    ctx.fillStyle = hex2rgba(color, 0.75);
+    ctx.fillRect(x+tW*.12, cabY+1, tW*.76, 3);
 
-    // trailer body (neutral shell — fill level shows load state)
+    // trailer shell
     rrect(x, trailerY, tW, trailerH, 3, "rgba(220,216,208,.55)", soon ? "#fbbf24" : "#a09890", soon ? 2 : 1);
 
-    // water fill inside trailer
+    // fill level
     if (fill > 0.01) {
       const innerH = trailerH - 8;
       const fh = innerH * fill;
@@ -926,19 +1088,26 @@ function drawOutboundTrucks(frame, g) {
       ctx.fillRect(x+3, fy+fh-2, tW-6, 2);
     }
 
-    // fill % label
-    const fillLabel = fill > 0.01 ? `${Math.round(fill*100)}%` : "empty";
-    txt(fillLabel, cx, trailerY + trailerH/2, 10, "#1d2329");
+    // destination lane chip
+    if (dest >= 0) {
+      const cw = Math.min(tW-6, 26), ch = 12;
+      rrect(cx-cw/2, trailerY+3, cw, ch, 3, hex2rgba(color,.20), hex2rgba(color,.60), 1);
+      txt(`L${dest}`, cx, trailerY+3+ch/2, 7, color, "center", "middle", true);
+    }
 
-    // timer bar (bottom of trailer)
-    const barY = trailerY + trailerH - 8;
+    // fill % label
+    txt(fill > 0.01 ? `${Math.round(fill*100)}%` : "empty",
+        cx, trailerY + trailerH/2 + 5, 9, "#1d2329");
+
+    // timer bar
+    const barY = trailerY + trailerH - 7;
     rrect(x+3, barY, tW-6, 4, 2, "#d5d0c4", null);
     const tr = Math.min(1, timer / S.maxDep);
     if (tr > 0) {
       const tc = tr < 0.25 ? "#b91c1c" : tr < 0.55 ? "#d97706" : "#15803d";
       rrect(x+3, barY, (tW-6)*tr, 4, 2, tc, null);
     }
-    txt(`T-${timer}`, cx, bldBot+2, 8, soon ? "#b91c1c" : "#67717d", "center", "top");
+    txt(`T-${timer}`, cx, bldBot + queueBandH + 2, 7, soon ? "#b91c1c" : "#67717d", "center", "top");
   });
 
   txt("outbound trucks", g.bldL, LH-2, 9, "#9ca3af", "left", "bottom");
@@ -981,14 +1150,30 @@ function updateHud(frame) {
   const dis = (m.disruption_door_failures||0)+(m.disruption_rush_trucks||0)+(m.disruption_timer_shocks||0);
 
   $("hStep").textContent  = frame.t;
-  $("hBuf").textContent   = `${Math.round(frame.buffer)}/${Math.round(frame.buffer_capacity)}`;
+  $("hBuf").textContent   = `${Math.round(frame.buffer)} cbm`;
   $("hWait").textContent  = (frame.waiting_trucks||[]).length;
   $("hSched").textContent = (frame.scheduled_trucks||[]).length;
   $("hThru").textContent  = Math.round(m.total_throughput||0);
   $("hFill").textContent  = `${Math.round(fill*100)}%`;
-  $("hOvf").textContent   = m.buffer_overflow_count||0;
+  $("hOvf").textContent   = m.empty_departures||0;
   $("hDoor").textContent  = `${Math.round(dutil*100)}%`;
-  $("tReadout").textContent = `t=${frame.t}`;
+
+  // Total Ticks: 에피소드 완료 tick (마지막 프레임 기준 — 스크럽해도 고정)
+  const totalT = S.totalTicks;
+  if (totalT > 0) {
+    $("hTicks").textContent = totalT;
+    // 현재 진행률을 readout에 표시
+    const pct = Math.round(frame.t / totalT * 100);
+    $("tReadout").textContent = `t=${frame.t} / ${totalT}  (${pct}%)`;
+  } else {
+    $("hTicks").textContent = "—";
+    $("tReadout").textContent = `t=${frame.t}`;
+  }
+
+  const obq = frame.outbound_waiting_count;
+  $("hOBQWrap").style.display = (obq != null) ? "" : "none";
+  $("hOBQ").textContent = obq ?? 0;
+
   $("hDisWrap").style.display = dis > 0 ? "" : "none";
   $("hDis").textContent = dis;
 }
@@ -1033,14 +1218,30 @@ function applyData(data, src) {
   S.frames = data.frames;
   S.idx    = 0; S.playing = false;
   const meta = data.meta || {};
-  S.nD = Number(meta.num_doors) || data.frames[0]?.doors?.length  || 3;
-  S.nL = Number(meta.num_lanes) || data.frames[0]?.lanes?.length  || 5;
-  S.maxDep = Number(meta.dispatch_interval_max) ||
-    Math.max(1, ...data.frames.flatMap(f=>(f.lanes||[]).map(l=>l.outbound_departure_timer||0)));
+  S.nD  = Number(meta.num_doors || meta.num_inbound_doors) || data.frames[0]?.doors?.length || 3;
+  S.nL  = Number(meta.num_lanes) || data.frames[0]?.lanes?.length || 5;
+  S.nOD = Number(meta.num_outbound_doors) || data.frames[0]?.outbound_doors?.length || S.nL;
+  S.maxDep = Number(meta.outbound_loading_time_max || meta.dispatch_interval_max) ||
+    Math.max(1,
+      ...data.frames.flatMap(f => [
+        ...(f.outbound_doors||[]).map(od => od.loading_timer||0),
+        ...(f.lanes||[]).map(l => l.outbound_departure_timer||0),
+      ]));
+
+  // compound 모드 감지: 첫 프레임에 outbound_waiting_count 필드가 있으면 compound
+  S.compoundMode = (data.frames[0]?.outbound_waiting_count != null);
+
+  // totalTicks: meta에 있으면 우선 사용, 없으면 마지막 프레임의 t값
+  S.totalTicks = Number(
+    meta.final_metrics?.total_ticks
+    ?? data.frames[data.frames.length - 1]?.t
+    ?? 0
+  );
 
   $("mPolicy").textContent = `policy: ${meta.policy??"-"}`;
   $("mSeed").textContent   = `seed: ${meta.seed??"-"}`;
   $("mSteps").textContent  = `steps: ${data.frames.length}`;
+  $("mTicks").textContent  = S.totalTicks > 0 ? `ticks: ${S.totalTicks}` : `ticks: -`;
   $("mSrc").textContent    = `source: ${src}`;
   $("slider").max = String(data.frames.length-1);
   $("tickEnd").textContent = String(data.frames[data.frames.length-1]?.t ?? data.frames.length-1);
@@ -1073,23 +1274,47 @@ function computeDepartures() {
   const nL = S.nL;
   const deps = [];
 
+  // Check if this is 2-stage format (has outbound_doors array)
+  const is2Stage = (frames[0]?.outbound_doors?.length > 0);
+
   for (let t = 0; t < frames.length - 1; t++) {
     const f     = frames[t];
     const fNext = frames[t + 1];
-    for (let k = 0; k < nL; k++) {
-      const lane     = (f.lanes     || [])[k];
-      const laneNext = (fNext.lanes || [])[k];
-      if (!lane || !laneNext) continue;
-      // timer 리셋 = 출발 이벤트
-      if (laneNext.outbound_departure_timer > lane.outbound_departure_timer) {
-        deps.push({
-          t:        f.t,
-          lane:     k,
-          loaded:   lane.outbound_loaded   || 0,
-          capacity: lane.outbound_capacity || 1,
-          fill:     lane.outbound_fill_rate|| 0,
-          isEmpty:  (lane.outbound_loaded  || 0) === 0,
-        });
+
+    if (is2Stage) {
+      // 2-stage: departure when outbound_door goes from busy→idle (with loaded > 0)
+      const ods     = f.outbound_doors     || [];
+      const odsNext = fNext.outbound_doors || [];
+      ods.forEach((od, i) => {
+        const odNext = odsNext[i];
+        if (!odNext) return;
+        if (od.is_busy && !odNext.is_busy && (od.loaded || 0) > 0) {
+          deps.push({
+            t:        f.t,
+            lane:     od.assigned_dest >= 0 ? od.assigned_dest : i,
+            loaded:   od.loaded   || 0,
+            capacity: od.capacity || 15,
+            fill:     od.fill_rate || 0,
+            isEmpty:  (od.loaded || 0) === 0,
+          });
+        }
+      });
+    } else {
+      // Legacy: departure when per-lane outbound_departure_timer resets
+      for (let k = 0; k < nL; k++) {
+        const lane     = (f.lanes     || [])[k];
+        const laneNext = (fNext.lanes || [])[k];
+        if (!lane || !laneNext) continue;
+        if (laneNext.outbound_departure_timer > lane.outbound_departure_timer) {
+          deps.push({
+            t:        f.t,
+            lane:     k,
+            loaded:   lane.outbound_loaded    || 0,
+            capacity: lane.outbound_capacity  || 1,
+            fill:     lane.outbound_fill_rate || 0,
+            isEmpty:  (lane.outbound_loaded   || 0) === 0,
+          });
+        }
       }
     }
   }
@@ -1202,7 +1427,12 @@ function computeCargoStats() {
   // remaining at final frame
   const remaining = Array(nL).fill(0);
   (fN.lanes || []).forEach((l, k) => {
-    if (k < nL) remaining[k] += (l.queue_volume || 0) + (l.outbound_loaded || 0);
+    if (k < nL) {
+      remaining[k] += (l.queue_volume || 0);
+      // 2-stage: use outbound_door.loaded, legacy: use lane.outbound_loaded
+      const od = l.outbound_door;
+      remaining[k] += od ? (od.loaded || 0) : (l.outbound_loaded || 0);
+    }
   });
   (fN.waiting_trucks || []).forEach(t => addShipments(t.shipments, remaining));
   (fN.doors          || []).forEach(d => addShipments(d.assigned_truck_shipments, remaining));
@@ -1222,10 +1452,10 @@ function openCargoModal() {
   if (S.frames.length) {
     const f = S.frames[S.frames.length - 1];
     meta.throughput = (f.metrics || {}).total_throughput || 0;
-    meta.overflow   = (f.metrics || {}).buffer_overflow_count || 0;
+    meta.empty      = (f.metrics || {}).empty_departures || 0;
   }
   $("cargoModalSub").textContent =
-    `전체 처리량 ${meta.throughput?.toFixed(0)} CBM  ·  오버플로우 ${meta.overflow}회`;
+    `전체 처리량 ${meta.throughput?.toFixed(0)} CBM  ·  빈 출발 ${meta.empty}회`;
 
   // build grid
   const grid = $("cargoGrid");
@@ -1297,6 +1527,129 @@ function closeCargoModal() {
   $("cargoModal").classList.remove("open");
 }
 
+// ── Benchmark Modal ───────────────────────────────────────────
+const POLICY_COLORS = {
+  random:"#9333ea", fifo:"#2563eb", greedy:"#0891b2",
+  heuristic:"#d97706", mip:"#dc2626", rl:"#16a34a", ga:"#0f766e",
+};
+// 정책명 → viz JSON 파일명 매핑 (lane-mode 3-action · 3door · disruption [20260531_004])
+const POLICY_JSON = {
+  random:"20260531_004/sim_2stage_random.json", fifo:"20260531_004/sim_2stage_fifo.json",
+  greedy:"20260531_004/sim_2stage_greedy.json", heuristic:"20260531_004/sim_2stage_heuristic.json",
+  mip:"20260531_004/sim_2stage_mip.json", rl:"20260531_004/sim_2stage_rl.json", ga:"20260531_004/sim_2stage_ga.json",
+};
+// seed=42 단일 시뮬레이션 tick (viz JSON 기준, lane-mode 3-action · 3door · disruption [20260531_004])
+const POLICY_SIM_TICKS = {
+  random:353, fifo:353, greedy:350, heuristic:350, mip:353, rl:345, ga:362,
+};
+
+async function openBenchModal() {
+  $("benchModal").classList.add("open");
+  const el = $("benchContent");
+  el.innerHTML = `<div style="text-align:center;padding:32px;color:var(--muted)">로드 중…</div>`;
+
+  let data;
+  try {
+    const res = await fetch("20260531_004/benchmark_2stage_8door.json", {cache:"no-store"});
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--warn);padding:16px">
+      benchmark_2stage_8door.json 로드 실패: ${e.message}<br>
+      <small>실험을 먼저 실행해 주세요 (python run_all_experiments_2stage.py)</small>
+    </div>`;
+    return;
+  }
+
+  // 정책 목록 추출 + total_ticks 기준 오름차순 정렬
+  const policies = Object.entries(data).map(([name, agg]) => ({
+    name,
+    ticks:  agg.total_ticks?.mean ?? Infinity,
+    ticksStd: agg.total_ticks?.std ?? 0,
+    fill:   agg.avg_fill_rate?.mean ?? 0,
+    empty:  agg.empty_departures?.mean ?? 0,
+    inUtil: agg.door_utilization?.mean ?? 0,
+    outUtil:agg.outbound_door_utilization?.mean ?? 0,
+    thru:   agg.total_throughput?.mean ?? 0,
+  })).sort((a, b) => a.ticks - b.ticks);
+
+  const bestTicks = policies[0]?.ticks ?? 1;
+  const curPolicy = (S.frames.length ? (S.frames[0]?.metrics ? null : null) : null);
+  // 현재 로드된 정책명은 subline에서 읽기
+  const curPolicyName = $("mPolicy").textContent.replace("policy: ", "").toLowerCase();
+
+  const rankClass = i => i === 0 ? "gold" : i === 1 ? "silver" : i === 2 ? "bronze" : "";
+  const medal     = i => i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "";
+
+  let rows = policies.map((p, i) => {
+    const barW    = Math.round(bestTicks / p.ticks * 100);
+    const color   = POLICY_COLORS[p.name] || "#888";
+    const isCur   = p.name === curPolicyName;
+    const hasJson = !!POLICY_JSON[p.name];
+    const simTick = POLICY_SIM_TICKS[p.name] ?? "—";
+    const clickStyle = hasJson ? "cursor:pointer" : "";
+    const loadHint   = hasJson
+      ? `<span style="font-size:10px;color:var(--muted);margin-left:6px">클릭해서 보기 ▶</span>`
+      : "";
+    return `<tr class="${isCur ? "current-policy" : ""}" style="${clickStyle}"
+               data-policy="${p.name}" data-json="${POLICY_JSON[p.name]||""}">
+      <td><span class="bench-rank ${rankClass(i)}">${medal(i)||i+1}</span></td>
+      <td>
+        <span class="bench-policy-dot" style="background:${color}"></span>
+        <strong>${p.name}</strong>
+        ${isCur ? ' <span style="font-size:10px;color:var(--accent)">← 현재</span>' : loadHint}
+      </td>
+      <td class="r">
+        <span class="bench-bar-wrap"><span class="bench-bar-fill" style="width:${barW}%;background:${color}"></span></span>
+        <strong style="color:${color}">${p.ticks.toFixed(1)}</strong>
+        <span style="color:var(--muted);font-size:11px">±${p.ticksStd.toFixed(1)}</span>
+      </td>
+      <td class="r" style="color:var(--muted)">${simTick}</td>
+      <td class="r">${(p.fill*100).toFixed(1)}%</td>
+      <td class="r">${p.empty.toFixed(1)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="bench-scroll">
+      <table class="bench-table">
+        <thead>
+          <tr>
+            <th style="width:36px">#</th>
+            <th>정책</th>
+            <th class="r">Avg Ticks ↓ (20ep)</th>
+            <th class="r">Sim Ticks (seed42)</th>
+            <th class="r">탑재율</th>
+            <th class="r">빈출발</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="bench-legend">
+      ★ Compound Truck 모드: 인바운드 처리 완료 후 동일 차량이 아웃바운드 도크 대기 → 로딩 → 출발<br>
+      종료 조건: 레인 빔 + 현재 도킹 중 로딩 트럭 출발 완료 (미배정 대기 트럭 제외)<br>
+      Avg Ticks = 20 에피소드 평균 (seed 0~19) · Sim Ticks = seed=42 · 행 클릭 시 해당 시뮬레이션 로드
+    </div>`;
+
+  // 행 클릭 → 시뮬레이션 로드 후 모달 닫기
+  el.querySelectorAll("tr[data-json]").forEach(tr => {
+    const jsonFile = tr.dataset.json;
+    if (!jsonFile) return;
+    tr.addEventListener("click", () => {
+      closeBenchModal();
+      // 드롭다운도 동기화
+      const sel = $("srcSel");
+      for (const opt of sel.options) {
+        if (opt.value === jsonFile) { sel.value = jsonFile; break; }
+      }
+      loadUrl(jsonFile);
+    });
+  });
+}
+
+function closeBenchModal() { $("benchModal").classList.remove("open"); }
+
 // ── Wiring ────────────────────────────────────────────────────
 window.addEventListener("resize", resize);
 $("bPrev").addEventListener("click", () => setFrame(S.idx-1));
@@ -1307,6 +1660,9 @@ $("slider").addEventListener("input", e => { S.playing=false; syncIcon(); setFra
 $("spd").addEventListener("change",   e => S.fps = +e.target.value);
 $("srcSel").addEventListener("change", e => loadUrl(e.target.value));
 $("fileIn").addEventListener("change", e => { const f=e.target.files?.[0]; if(f)readFile(f); e.target.value=""; });
+$("btnBench").addEventListener("click", openBenchModal);
+$("benchModalClose").addEventListener("click", closeBenchModal);
+$("benchModal").addEventListener("click", e => { if(e.target===$("benchModal")) closeBenchModal(); });
 $("btnDep").addEventListener("click", openDepModal);
 $("depModalClose").addEventListener("click", closeDepModal);
 $("depModal").addEventListener("click", e => { if(e.target===$("depModal")) closeDepModal(); });
@@ -1330,6 +1686,10 @@ cv.addEventListener("wheel", e => {
   }
 }, { passive: false });
 document.addEventListener("keydown", e => {
+  if ($("benchModal").classList.contains("open")) {
+    if (e.key==="Escape") closeBenchModal();
+    return;
+  }
   if ($("depModal").classList.contains("open")) {
     if (e.key==="Escape") closeDepModal();
     return;

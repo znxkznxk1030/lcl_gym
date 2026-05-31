@@ -14,24 +14,29 @@ from env.policies import BasePolicy
 from rl.networks import NumpyMLP
 
 
-# 관측 벡터 정규화 상수 (crossdock_env DEFAULT_CONFIG 기준)
-# obs layout (size = 8 + num_doors):
-#   0: lane_queue, 1: congestion, 2: outbound_fill_rate,
-#   3: outbound_departure_in, 4: buffer_remaining,
-#   5: idle_doors, 6: waiting_trucks, 7: scheduled_trucks, 8..: door_matches
+# 관측 벡터 정규화 상수 (2-stage, obs_size = 9 + num_inbound_doors)
+# obs layout:
+#   0: lane_queue,         1: congestion,          2: outbound_fill_rate,
+#   3: outbound_timer,     4: buffer (현재 적재량),  5: idle_inbound_doors,
+#   6: waiting_trucks,     7: scheduled_trucks,    8: idle_outbound_doors,
+#   9..: door_match_i
 _OBS_SCALE_BASE = np.array([
     50.0,   # 0: lane_queue
     1.0,    # 1: congestion
     1.0,    # 2: outbound_fill_rate
-    28.0,   # 3: outbound_departure_in
-    150.0,  # 4: buffer_remaining
-    3.0,    # 5: idle_doors
-    100.0,  # 6: waiting_trucks  (8도어 환경 최대 ~150대)
-    200.0,  # 7: scheduled_trucks
+    28.0,   # 3: outbound_timer (loading_timer_max)
+    2.0,    # 4: buffer fill ratio [0,2] (env에서 이미 정규화)
+    10.0,   # 5: idle_inbound_doors (up to 10)
+    200.0,  # 6: waiting_trucks
+    300.0,  # 7: scheduled_trucks
+    10.0,   # 8: idle_outbound_doors (up to 10)
 ], dtype=np.float32)
 
 
 def normalize_obs(obs: np.ndarray) -> np.ndarray:
+    # truck-selection 모드(size=20): 이미 env에서 정규화됨 → 1로 나눔
+    if len(obs) == 20:
+        return obs
     n_door_matches = len(obs) - len(_OBS_SCALE_BASE)
     scale = np.concatenate([
         _OBS_SCALE_BASE,
@@ -59,13 +64,13 @@ class QLearningPolicy(BasePolicy):
         self.rng = rng or np.random.default_rng()
 
     def act(self, obs: np.ndarray, num_doors: int) -> int:
-        """epsilon-greedy 행동 선택. 반환: 0 (skip) 또는 1 (request)"""
+        """epsilon-greedy 행동 선택. 반환: 0=skip, 1=request_inbound, 2=boost_outbound"""
         if self.rng.random() < self.epsilon:
-            return int(self.rng.integers(0, 2))
+            return int(self.rng.integers(0, 3))
 
         obs_norm = normalize_obs(obs)
         q = self.net.forward(obs_norm)
-        return int(np.argmax(q[:2]))
+        return int(np.argmax(q[:3]))
 
     def reset(self):
         pass

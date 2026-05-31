@@ -34,22 +34,37 @@ def shape_rewards(
     num_doors: int,
 ) -> list:
     """
-    환경 보상에 추가 shaping 적용 (환경 코드 수정 없음).
-
-    + 1.0 * door_match : 선택한 도어의 화물 매칭도가 높을수록 보너스
-    - 0.1 * congestion : 혼잡 억제
+    3-action shaping (0=skip, 1=request_inbound, 2=boost_outbound):
+    - 인바운드 기회(유휴 도어 + 대기 트럭)가 있는데 action=1이면 +0.5, 아니면 -0.5
+    - 아웃바운드 긴급(timer<10 AND 레인에 화물)인데 action=2이면 +0.5, 아니면 -0.5
+    - 버퍼 포화(fill>1.5) 상태에서 action=1이면 추가 -1.0
     """
-    shaped = []
-    for k, (r, obs, action) in enumerate(zip(env_rewards, obs_list, actions)):
-        congestion = float(obs[1])
-        door_match = 0.0
-        if action == 1:
-            match_start = 8
-            door_matches = obs[match_start: match_start + num_doors]
-            if len(door_matches) > 0:
-                door_match = float(door_matches.max())
+    BUF_FULL = 1.5
 
-        bonus = 1.0 * door_match - 0.1 * congestion
+    shaped = []
+    for r, obs, action in zip(env_rewards, obs_list, actions):
+        idle_doors = float(obs[5])
+        waiting    = float(obs[6])
+        lane_queue = float(obs[0])
+        fill_rate  = float(obs[2])   # 내 레인 도크 로딩률
+        buf_fill   = float(obs[4])   # fill ratio [0, 2]
+
+        can_inbound  = idle_doors > 0 and waiting > 0
+        needs_dock   = lane_queue > 0 and fill_rate == 0  # 화물 있지만 도크 없음
+        buf_stressed = buf_fill > BUF_FULL
+
+        bonus = 0.0
+        # 도크 재배정이 필요한 상황: action=2가 빈 도크 rescue 발동
+        if needs_dock:
+            bonus += 0.8 if action == 2 else -0.5
+
+        if can_inbound:
+            if buf_stressed:
+                if action == 1:
+                    bonus -= 1.0  # 버퍼 포화에서 인바운드 요청 → 패널티
+            else:
+                bonus += 0.4 if action == 1 else -0.3
+
         shaped.append(r + bonus)
     return shaped
 
@@ -81,9 +96,10 @@ def train(
 
     config = {**DEFAULT_CONFIG, **(env_config or {})}
     env = CrossDockEnv(config, seed=seed)
-    n_agents  = env.num_lanes
+    truck_selection_mode = env.use_truck_selection
+    n_agents  = env.top_k_trucks if truck_selection_mode else env.num_lanes
     obs_size  = env.obs_size
-    n_actions = 2  # 0=skip, 1=request
+    n_actions = 2 if truck_selection_mode else 3  # truck-sel: 0/1; lane: 0/1/2
 
     # ── 네트워크 초기화 ───────────────────────────────────────────────
     if shared_weights:
@@ -105,16 +121,15 @@ def train(
         for k in range(n_agents)
     ]
 
-    log_rewards    = []
-    log_throughput = []
-    log_overflow   = []
-    log_loss       = []
+    log_rewards = []
+    log_ticks   = []
+    log_loss    = []
 
     print(f"학습 시작 — episodes={num_episodes}, shared={shared_weights}, "
           f"lr={lr}, gamma={gamma}")
-    print(f"{'Episode':>8} {'AvgReward':>12} {'Throughput':>12} "
-          f"{'Overflow':>10} {'TDLoss':>10} {'Epsilon':>9}")
-    print("-" * 65)
+    print(f"{'Episode':>8} {'AvgReward':>12} {'AvgTicks':>10} "
+          f"{'TDLoss':>10} {'Epsilon':>9}")
+    print("-" * 55)
 
     for episode in range(num_episodes):
         env._seed = seed + episode
@@ -128,9 +143,15 @@ def train(
                 for k in range(n_agents)
             ]
             next_obs_list, env_rewards, done, info = env.step(actions)
-            rewards = shape_rewards(
-                env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors
-            )
+
+            if truck_selection_mode:
+                # broadcast mean team reward to all K truck-slot agents
+                team_reward = float(np.mean(env_rewards))
+                rewards = [team_reward] * n_agents
+            else:
+                rewards = shape_rewards(
+                    env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors
+                )
 
             for k in range(n_agents):
                 buffer.push(
@@ -165,34 +186,29 @@ def train(
         if (episode + 1) % target_sync_interval == 0:
             target_net.copy_weights_from(shared_net if shared_weights else nets[0])
 
-        metrics = info.get("metrics", env.metrics)
         log_rewards.append(ep_reward)
-        log_throughput.append(metrics["total_throughput"])
-        log_overflow.append(metrics["buffer_overflow_count"])
+        log_ticks.append(float(env.t))
         log_loss.append(float(np.mean(ep_losses)) if ep_losses else 0.0)
 
         if (episode + 1) % log_interval == 0:
             w = 100
             print(f"{episode+1:>8} {np.mean(log_rewards[-w:]):>12.1f} "
-                  f"{np.mean(log_throughput[-w:]):>12.1f} "
-                  f"{np.mean(log_overflow[-w:]):>10.1f} "
+                  f"{np.mean(log_ticks[-w:]):>10.1f} "
                   f"{np.mean(log_loss[-w:]):>10.4f} {epsilon:>9.3f}")
             nets[0].save(os.path.join(save_dir, f"weights_ep{episode+1}"))
 
     final_path = os.path.join(save_dir, "weights_final")
     nets[0].save(final_path)
-    np.save(os.path.join(save_dir, "episode_rewards.npy"),  np.array(log_rewards))
-    np.save(os.path.join(save_dir, "throughput_log.npy"),   np.array(log_throughput))
-    np.save(os.path.join(save_dir, "overflow_log.npy"),     np.array(log_overflow))
-    np.save(os.path.join(save_dir, "td_loss_log.npy"),      np.array(log_loss))
+    np.save(os.path.join(save_dir, "episode_rewards.npy"), np.array(log_rewards))
+    np.save(os.path.join(save_dir, "ticks_log.npy"),       np.array(log_ticks))
+    np.save(os.path.join(save_dir, "td_loss_log.npy"),     np.array(log_loss))
 
     print(f"\n학습 완료. 가중치 저장: {final_path}.npz")
     return {
-        "rewards":    np.array(log_rewards),
-        "throughput": np.array(log_throughput),
-        "overflow":   np.array(log_overflow),
-        "loss":       np.array(log_loss),
-        "net":        nets[0],
+        "rewards": np.array(log_rewards),
+        "ticks":   np.array(log_ticks),
+        "loss":    np.array(log_loss),
+        "net":     nets[0],
     }
 
 

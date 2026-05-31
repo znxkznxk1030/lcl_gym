@@ -70,14 +70,12 @@ def solve_assignment(
     n_t = len(trucks)
     n_d = len(idle_door_indices)
 
-    # urgency 가중 점수 계산 (긴급 트럭은 3배 가중)
-    RUSH_MULTIPLIER = 3.0
+    # tick 최소화 목표: 총 화물량 기준으로 고부피 트럭 우선 배정 → 큐 빠른 소진
+    # 긴급 트럭은 2배 가중 (빠른 처리로 병목 제거)
+    RUSH_MULTIPLIER = 2.0
     scores = []
     for truck in trucks:
-        s = sum(
-            vol / (outbound_trucks[lane_id].departure_timer + 1)
-            for lane_id, vol in truck.shipments.items()
-        )
+        s = float(truck.total_volume())
         if getattr(truck, "is_rush", False):
             s *= RUSH_MULTIPLIER
         scores.append(s)
@@ -168,15 +166,36 @@ def capture_frame(env: CrossDockEnv, actions: list, rewards: list) -> dict:
             }
             for d in env.doors
         ],
+        "outbound_doors": [
+            {
+                "door_id":       od.door_id,
+                "is_busy":       bool(od.is_busy),
+                "assigned_dest": int(od.assigned_dest),
+                "loaded":        float(od.loaded),
+                "fill_rate":     float(od.fill_rate),
+                "loading_timer": int(od.loading_timer),
+                "capacity":      float(od.capacity),
+            }
+            for od in env.outbound_doors
+        ],
         "lanes": [
             {
-                "lane_id": int(lane.lane_id),
+                "lane_id":      int(lane.lane_id),
                 "queue_volume": float(lane.queue_volume),
-                "congestion": float(lane.congestion),
-                "outbound_loaded": float(env.outbound_trucks[k].loaded),
-                "outbound_fill_rate": float(env.outbound_trucks[k].fill_rate),
-                "outbound_departure_timer": int(env.outbound_trucks[k].departure_timer),
-                "outbound_capacity": float(env.outbound_trucks[k].capacity),
+                "congestion":   float(lane.congestion),
+                "outbound_door": next(
+                    (
+                        {
+                            "door_id":      od.door_id,
+                            "loaded":       float(od.loaded),
+                            "fill_rate":    float(od.fill_rate),
+                            "loading_timer": int(od.loading_timer),
+                        }
+                        for od in env.outbound_doors
+                        if od.is_busy and od.assigned_dest == k
+                    ),
+                    None,
+                ),
             }
             for k, lane in enumerate(env.lanes)
         ],
@@ -244,11 +263,11 @@ def run_episode_mip(
             env.waiting_trucks = reordered_front + rest
 
             # 배정된 트럭의 레인들이 모두 요청
+            # 2-stage: outbound_trucks 는 _sync_outbound_trucks_compat() 으로 동기화됨
             requesting_lanes = set()
             for idx in assigned_indices:
                 if idx is not None and idx < len(waiting):
                     truck = waiting[idx]
-                    # 가장 긴급한 레인 하나만 요청 (도어 배정 트리거용)
                     if truck.shipments:
                         urgent_lane = min(
                             truck.shipments.keys(),

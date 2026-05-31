@@ -511,9 +511,20 @@
     </div>
     <div class="control-row">
       <select id="sourceSelect" aria-label="데이터 선택">
-        <option value="sim_heuristic.json">heuristic seed 7</option>
-        <option value="simulation_data.json">simulation_data</option>
-        <option value="sim_rl.json">rl seed 42</option>
+        <optgroup label="── 2-Stage 8door ──">
+          <option value="sim_2stage_mip.json">2-Stage MIP</option>
+          <option value="sim_2stage_rl.json">2-Stage RL</option>
+          <option value="sim_2stage_ga.json">2-Stage GA</option>
+          <option value="sim_2stage_heuristic.json">2-Stage Heuristic</option>
+          <option value="sim_2stage_greedy.json">2-Stage Greedy</option>
+          <option value="sim_2stage_fifo.json">2-Stage FIFO</option>
+          <option value="sim_2stage_random.json">2-Stage Random</option>
+        </optgroup>
+        <optgroup label="── Legacy ──">
+          <option value="sim_heuristic.json">heuristic seed 7</option>
+          <option value="simulation_data.json">simulation_data</option>
+          <option value="sim_rl.json">rl seed 42</option>
+        </optgroup>
       </select>
       <label class="file-label" title="JSON 파일 열기">
         JSON
@@ -1043,18 +1054,24 @@
 
     function drawLanes(frame, shockedLanes = new Set()) {
       const lanes = frame.lanes || [];
-      // 가장 타이머가 낮은 레인 — 곧 출발 강조용
-      const minTimer = Math.min(...lanes.map((l) => Number(l.outbound_departure_timer || Infinity)));
+      // 가장 타이머가 낮은 레인 — 곧 출발 강조용 (2-stage: via outbound_door, legacy: via lane field)
+      const minTimer = Math.min(...lanes.map((l) => {
+        const od = l.outbound_door;
+        return od ? Number(od.loading_timer || Infinity) : Number(l.outbound_departure_timer || Infinity);
+      }));
       lanes.forEach((lane, i) => {
         const x = laneX[i];
         const color = laneColors[i];
         const capacity = Number(lane.outbound_capacity || 50);
         const queue = Number(lane.queue_volume || 0);
         const congestion = clamp(Number(lane.congestion || queue / capacity), 0, 1);
-        const loaded = Number(lane.outbound_loaded || 0);
-        const fillRate = clamp(Number(lane.outbound_fill_rate || loaded / capacity), 0, 1);
-        const timer = Number(lane.outbound_departure_timer || 0);
-        const soonest = timer === minTimer;
+        // 2-stage: read from outbound_door, fallback to legacy lane fields
+        const od = lane.outbound_door;
+        const loaded   = od ? Number(od.loaded || 0)     : Number(lane.outbound_loaded || 0);
+        const fillRate = od ? clamp(Number(od.fill_rate || 0), 0, 1)
+                            : clamp(Number(lane.outbound_fill_rate || loaded / capacity), 0, 1);
+        const timer    = od ? Number(od.loading_timer || 0) : Number(lane.outbound_departure_timer || 0);
+        const soonest = timer === minTimer && (od ? true : timer > 0);
         const shocked = shockedLanes.has(i);
 
         const QUEUE_MAX_H = 3.1;
@@ -1298,7 +1315,8 @@
       (frame.lanes || []).forEach((lane, i) => {
         const queue = Number(lane.queue_volume || 0);
         const cap = Number(lane.outbound_capacity || 50);
-        const fillRate = clamp(Number(lane.outbound_fill_rate || 0), 0, 1);
+        const od = lane.outbound_door;
+        const fillRate = od ? clamp(Number(od.fill_rate || 0), 0, 1) : clamp(Number(lane.outbound_fill_rate || 0), 0, 1);
         const row = document.createElement("div");
         row.className = "lane-row";
         row.innerHTML = `
@@ -1364,12 +1382,16 @@
       state.playing = false;
       state.source = sourceName;
       state.maxDoorTime = Math.max(1, ...data.frames.flatMap((frame) => (frame.doors || []).map((door) => Number(door.remaining_time || 0))));
-      state.maxDispatchInterval = Number((data.meta || {}).dispatch_interval_max || 0) ||
-        Math.max(1, ...data.frames.flatMap((frame) => (frame.lanes || []).map((lane) => Number(lane.outbound_departure_timer || 0))));
+      state.maxDispatchInterval = Number((data.meta || {}).outbound_loading_time_max || (data.meta || {}).dispatch_interval_max || 0) ||
+        Math.max(1,
+          ...data.frames.flatMap((frame) => [
+            ...(frame.outbound_doors || []).map((od) => Number(od.loading_timer || 0)),
+            ...(frame.lanes || []).map((lane) => Number(lane.outbound_departure_timer || 0)),
+          ]));
 
       // 도어·레인 수를 meta 또는 첫 프레임에서 자동 감지 → 씬 재구성
       const meta = data.meta || {};
-      const detectedDoors = Number(meta.num_doors) || (data.frames[0]?.doors || []).length || 3;
+      const detectedDoors = Number(meta.num_doors || meta.num_inbound_doors) || (data.frames[0]?.doors || []).length || 3;
       const detectedLanes = Number(meta.num_lanes) || (data.frames[0]?.lanes || []).length || 5;
       if (detectedDoors !== numDoors || detectedLanes !== numLanes) {
         numDoors   = detectedDoors;

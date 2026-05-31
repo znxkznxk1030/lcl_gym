@@ -72,15 +72,38 @@ def capture_frame(env: CrossDockEnv, actions: list[int], rewards: list[float]) -
             }
             for d in env.doors
         ],
+        "outbound_doors": [
+            {
+                "door_id":      od.door_id,
+                "is_busy":      bool(od.is_busy),
+                "assigned_dest": int(od.assigned_dest),
+                "loaded":       float(od.loaded),
+                "fill_rate":    float(od.fill_rate),
+                "loading_timer": int(od.loading_timer),
+                "capacity":     float(od.capacity),
+            }
+            for od in env.outbound_doors
+        ],
         "lanes": [
             {
-                "lane_id": int(lane.lane_id),
+                "lane_id":      int(lane.lane_id),
                 "queue_volume": float(lane.queue_volume),
-                "congestion": float(lane.congestion),
-                "outbound_loaded": float(env.outbound_trucks[k].loaded),
-                "outbound_fill_rate": float(env.outbound_trucks[k].fill_rate),
-                "outbound_departure_timer": int(env.outbound_trucks[k].departure_timer),
-                "outbound_capacity": float(env.outbound_trucks[k].capacity),
+                "congestion":   float(lane.congestion),
+                # 이 레인을 담당하는 아웃바운드 도크 정보 (없으면 None)
+                "outbound_door": next(
+                    (
+                        {
+                            "door_id":      od.door_id,
+                            "loaded":       float(od.loaded),
+                            "fill_rate":    float(od.fill_rate),
+                            "loading_timer": int(od.loading_timer),
+                            "capacity":     float(od.capacity),
+                        }
+                        for od in env.outbound_doors
+                        if od.is_busy and od.assigned_dest == k
+                    ),
+                    None,
+                ),
             }
             for k, lane in enumerate(env.lanes)
         ],
@@ -203,9 +226,10 @@ def main():
             "policy": args.policy,
             "seed": args.seed,
             "num_steps": len(frames),
-            "num_lanes": 5,
-            "num_doors": 3,
-            "dispatch_interval_max": DEFAULT_CONFIG["dispatch_interval_max"],
+            "num_lanes": DEFAULT_CONFIG["num_lanes"],
+            "num_inbound_doors": DEFAULT_CONFIG["num_inbound_doors"],
+            "num_outbound_doors": DEFAULT_CONFIG["num_outbound_doors"],
+            "outbound_loading_time_max": DEFAULT_CONFIG["outbound_loading_time_max"],
             "final_metrics": {
                 k: float(v) if isinstance(v, (int, float)) else v
                 for k, v in metrics.items()

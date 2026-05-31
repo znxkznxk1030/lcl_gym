@@ -1,0 +1,580 @@
+{
+  "random": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.69333330687111,
+      "std": 5.064051953527868
+    },
+    "outbound_departures": {
+      "mean": 83.2,
+      "std": 2.6381811916545836
+    },
+    "empty_departures": {
+      "mean": 14.4,
+      "std": 4.017461885320134
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 448.25,
+      "std": 55.66495755859336
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1552.2,
+      "std": 43.69507981455121
+    },
+    "outbound_door_steps_total": {
+      "mean": 2620.0,
+      "std": 70.72199092220184
+    },
+    "total_steps": {
+      "mean": 327.5,
+      "std": 8.84024886527523
+    },
+    "dwell_time_sum": {
+      "mean": 1618.95,
+      "std": 267.6724630962251
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.0,
+      "std": 1.816590212458495
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.1,
+      "std": 1.7
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.5,
+      "std": 8.84024886527523
+    },
+    "door_utilization": {
+      "mean": 0.4567027824095303,
+      "std": 0.059517278079492655
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5924676062220378,
+      "std": 0.007155092311916062
+    },
+    "avg_dwell_time": {
+      "mean": 8.08771214924274,
+      "std": 0.7758519537048341
+    },
+    "avg_fill_rate": {
+      "mean": 0.47744903862418814,
+      "std": 0.061885493936671615
+    }
+  },
+  "fifo": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.693333306871104,
+      "std": 5.06405195352787
+    },
+    "outbound_departures": {
+      "mean": 83.0,
+      "std": 2.756809750418044
+    },
+    "empty_departures": {
+      "mean": 14.55,
+      "std": 3.9556921012636965
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 450.15,
+      "std": 57.52849294045516
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1548.9,
+      "std": 38.36652186477164
+    },
+    "outbound_door_steps_total": {
+      "mean": 2616.8,
+      "std": 67.59408258124374
+    },
+    "total_steps": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "dwell_time_sum": {
+      "mean": 1468.8,
+      "std": 264.6391127554656
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.05,
+      "std": 1.8567444627627143
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.15,
+      "std": 1.6815171720800237
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "door_utilization": {
+      "mean": 0.45907787619014284,
+      "std": 0.060731403804427604
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5919660738716206,
+      "std": 0.007237928362313768
+    },
+    "avg_dwell_time": {
+      "mean": 7.3321167854344775,
+      "std": 0.8115630356633426
+    },
+    "avg_fill_rate": {
+      "mean": 0.4784384111323264,
+      "std": 0.060469822209265875
+    }
+  },
+  "greedy": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.693333306871104,
+      "std": 5.0640519535278665
+    },
+    "outbound_departures": {
+      "mean": 83.25,
+      "std": 2.680951323690902
+    },
+    "empty_departures": {
+      "mean": 14.65,
+      "std": 3.259984662540608
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 450.1,
+      "std": 56.74583685170217
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1553.15,
+      "std": 44.10926773366341
+    },
+    "outbound_door_steps_total": {
+      "mean": 2622.8,
+      "std": 75.61058127008415
+    },
+    "total_steps": {
+      "mean": 327.85,
+      "std": 9.45132265876052
+    },
+    "dwell_time_sum": {
+      "mean": 1707.9,
+      "std": 270.4793707475674
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.0,
+      "std": 1.816590212458495
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.25,
+      "std": 1.299038105676658
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.85,
+      "std": 9.45132265876052
+    },
+    "door_utilization": {
+      "mean": 0.45777783343438616,
+      "std": 0.05774397266939071
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5922090214120946,
+      "std": 0.0057180416396725026
+    },
+    "avg_dwell_time": {
+      "mean": 8.544633888993022,
+      "std": 0.8555978116946696
+    },
+    "avg_fill_rate": {
+      "mean": 0.4768854420634579,
+      "std": 0.0595772943223895
+    }
+  },
+  "heuristic": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.693333306871104,
+      "std": 5.0640519535278665
+    },
+    "outbound_departures": {
+      "mean": 83.15,
+      "std": 2.7977669667075564
+    },
+    "empty_departures": {
+      "mean": 14.35,
+      "std": 3.2446109165815242
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 447.95,
+      "std": 57.59034207226069
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1551.1,
+      "std": 44.77711469043087
+    },
+    "outbound_door_steps_total": {
+      "mean": 2617.6,
+      "std": 77.13261307644129
+    },
+    "total_steps": {
+      "mean": 327.2,
+      "std": 9.641576634555161
+    },
+    "dwell_time_sum": {
+      "mean": 1698.05,
+      "std": 278.17826568587276
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.0,
+      "std": 1.816590212458495
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.35,
+      "std": 1.4239030865898141
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.2,
+      "std": 9.641576634555161
+    },
+    "door_utilization": {
+      "mean": 0.45671278295868734,
+      "std": 0.060353663824666115
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5926206533014704,
+      "std": 0.007098685601554021
+    },
+    "avg_dwell_time": {
+      "mean": 8.485527657932172,
+      "std": 0.8189177560940867
+    },
+    "avg_fill_rate": {
+      "mean": 0.47747667862994375,
+      "std": 0.059556677004808135
+    }
+  },
+  "mip": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.69333330687111,
+      "std": 5.06405195352787
+    },
+    "outbound_departures": {
+      "mean": 83.45,
+      "std": 2.7290108097990378
+    },
+    "empty_departures": {
+      "mean": 15.0,
+      "std": 4.483302354291979
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 450.4,
+      "std": 57.99258573300556
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1556.9,
+      "std": 40.56217449792355
+    },
+    "outbound_door_steps_total": {
+      "mean": 2630.0,
+      "std": 69.82836100038436
+    },
+    "total_steps": {
+      "mean": 328.75,
+      "std": 8.728545125048045
+    },
+    "dwell_time_sum": {
+      "mean": 1739.8,
+      "std": 332.96930789488687
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 5.95,
+      "std": 1.8567444627627143
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.25,
+      "std": 1.299038105676658
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 328.75,
+      "std": 8.728545125048045
+    },
+    "door_utilization": {
+      "mean": 0.45659082254887606,
+      "std": 0.057005916595699306
+    },
+    "outbound_door_utilization": {
+      "mean": 0.592023142688372,
+      "std": 0.006537332346492441
+    },
+    "avg_dwell_time": {
+      "mean": 8.668961579574141,
+      "std": 0.9841489265419447
+    },
+    "avg_fill_rate": {
+      "mean": 0.4758138616247676,
+      "std": 0.059705258733543355
+    },
+    "avg_mip_ms": {
+      "mean": 8.271564425096594,
+      "std": 1.6700595372259306
+    }
+  },
+  "rl": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.693333306871104,
+      "std": 5.06405195352787
+    },
+    "outbound_departures": {
+      "mean": 83.0,
+      "std": 2.756809750418044
+    },
+    "empty_departures": {
+      "mean": 14.55,
+      "std": 3.9556921012636965
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 450.15,
+      "std": 57.52849294045516
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1548.9,
+      "std": 38.36652186477164
+    },
+    "outbound_door_steps_total": {
+      "mean": 2616.8,
+      "std": 67.59408258124374
+    },
+    "total_steps": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "dwell_time_sum": {
+      "mean": 1468.8,
+      "std": 264.6391127554656
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.05,
+      "std": 1.8567444627627143
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.15,
+      "std": 1.6815171720800237
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "door_utilization": {
+      "mean": 0.45907787619014284,
+      "std": 0.060731403804427604
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5919660738716206,
+      "std": 0.007237928362313768
+    },
+    "avg_dwell_time": {
+      "mean": 7.3321167854344775,
+      "std": 0.8115630356633426
+    },
+    "avg_fill_rate": {
+      "mean": 0.4784384111323264,
+      "std": 0.060469822209265875
+    }
+  },
+  "ga": {
+    "total_throughput": {
+      "mean": 595.4,
+      "std": 75.96077935355851
+    },
+    "total_fill_rate": {
+      "mean": 39.693333306871104,
+      "std": 5.06405195352787
+    },
+    "outbound_departures": {
+      "mean": 83.0,
+      "std": 2.756809750418044
+    },
+    "empty_departures": {
+      "mean": 14.55,
+      "std": 3.9556921012636965
+    },
+    "buffer_overflow_count": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "door_busy_steps": {
+      "mean": 450.15,
+      "std": 57.52849294045516
+    },
+    "outbound_door_busy_steps": {
+      "mean": 1548.9,
+      "std": 38.36652186477164
+    },
+    "outbound_door_steps_total": {
+      "mean": 2616.8,
+      "std": 67.59408258124374
+    },
+    "total_steps": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "dwell_time_sum": {
+      "mean": 1468.8,
+      "std": 264.6391127554656
+    },
+    "dwell_count": {
+      "mean": 199.65,
+      "std": 23.152267707505455
+    },
+    "disruption_door_failures": {
+      "mean": 6.05,
+      "std": 1.8567444627627143
+    },
+    "disruption_interrupted_trucks": {
+      "mean": 3.15,
+      "std": 1.6815171720800237
+    },
+    "disruption_rush_trucks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "disruption_timer_shocks": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "total_ticks": {
+      "mean": 327.1,
+      "std": 8.449260322655467
+    },
+    "door_utilization": {
+      "mean": 0.45907787619014284,
+      "std": 0.060731403804427604
+    },
+    "outbound_door_utilization": {
+      "mean": 0.5919660738716206,
+      "std": 0.007237928362313768
+    },
+    "avg_dwell_time": {
+      "mean": 7.3321167854344775,
+      "std": 0.8115630356633426
+    },
+    "avg_fill_rate": {
+      "mean": 0.4784384111323264,
+      "std": 0.060469822209265875
+    }
+  }
+}
