@@ -733,10 +733,23 @@ class CrossDockEnv:
             key=lambda k: door_timers_by_dest.get(k, self.outbound_loading_time_max)
         )
 
+        # 긴급도 순으로 정렬된 레인마다 해당 레인 화물이 가장 많은 트럭을 선택
+        used_indices: set = set()
+        assignments = []  # (door, truck, lane_id)
+
         for door, lane_id in zip(idle_doors, requesting):
-            if not self.waiting_trucks:
+            available = [i for i in range(len(self.waiting_trucks)) if i not in used_indices]
+            if not available:
                 break
-            truck = self.waiting_trucks.pop(0)
+            best_idx = max(available,
+                           key=lambda i: self.waiting_trucks[i].volume_for_lane(lane_id))
+            used_indices.add(best_idx)
+            assignments.append((door, self.waiting_trucks[best_idx], lane_id))
+
+        for idx in sorted(used_indices, reverse=True):
+            self.waiting_trucks.pop(idx)
+
+        for door, truck, lane_id in assignments:
             processing_time = int(self.assign_rng.integers(1, self.max_door_processing + 1))
             door.assign(truck, lane_id, processing_time)
 
