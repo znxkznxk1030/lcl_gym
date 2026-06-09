@@ -18,7 +18,9 @@
       "Bash(python -u -c ' *)",
       "Bash(python3 -u run_all_experiments_2stage.py)",
       "Bash(echo \"PID=$!\")",
-      "Bash(awk '{print $5, $9}')"
+      "Bash(awk '{print $5, $9}')",
+      "Bash(python ga/train_ga_truck_selection.py --pop 30 --gen 50 --eval 5)",
+      "Bash(python rl/run_ablation.py --episodes 1000 --bench 20)"
     ]
   }
 }

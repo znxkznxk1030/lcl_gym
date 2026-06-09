@@ -199,12 +199,21 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── Lane-mode 3-action · Best-Match 입고 · 3door · disruption (20ep 평균) [20260531_006] ──">
+        <option value="20260531_006/sim_2stage_rl.json">🥇 RL  avg 339.1 tick  (seed42: 366)</option>
+        <option value="20260531_006/sim_2stage_random.json">Random  avg 339.5 tick  (seed42: 354)</option>
+        <option value="20260531_006/sim_2stage_mip.json">MILP  avg 341.1 tick  (seed42: 354)</option>
+        <option value="20260531_006/sim_2stage_fifo.json">FIFO  avg 341.6 tick  (seed42: 354)</option>
+        <option value="20260531_006/sim_2stage_ga.json">GA (Lane)  avg 344.9 tick  (seed42: 349)</option>
+        <option value="20260531_006/sim_2stage_heuristic.json">Heuristic  avg 349.6 tick  (seed42: 368)</option>
+        <option value="20260531_006/sim_2stage_greedy.json">Greedy  avg 350.9 tick  (seed42: 335)</option>
+      </optgroup>
       <optgroup label="── Lane-mode 3-action · Best-Match 입고 · 3door · disruption (20ep 평균) [20260531_005] ──">
         <option value="20260531_005/sim_2stage_rl.json">🥇 RL  avg 339.1 tick  (seed42: 366)</option>
         <option value="20260531_005/sim_2stage_random.json">Random  avg 339.5 tick  (seed42: 354)</option>
         <option value="20260531_005/sim_2stage_mip.json">MILP  avg 341.1 tick  (seed42: 354)</option>
         <option value="20260531_005/sim_2stage_fifo.json">FIFO  avg 341.6 tick  (seed42: 354)</option>
-        <option value="20260531_005/sim_2stage_ga.json">GA  avg 344.9 tick  (seed42: 349)</option>
+        <option value="20260531_005/sim_2stage_ga.json">GA (Lane)  avg 344.9 tick  (seed42: 349)</option>
         <option value="20260531_005/sim_2stage_heuristic.json">Heuristic  avg 349.6 tick  (seed42: 368)</option>
         <option value="20260531_005/sim_2stage_greedy.json">Greedy  avg 350.9 tick  (seed42: 335)</option>
       </optgroup>
@@ -1541,13 +1550,13 @@ const POLICY_COLORS = {
   random:"#9333ea", fifo:"#2563eb", greedy:"#0891b2",
   heuristic:"#d97706", mip:"#dc2626", rl:"#16a34a", ga:"#0f766e",
 };
-// 정책명 → viz JSON 파일명 매핑 (lane-mode 3-action · best-match 입고 · 3door · disruption [20260531_005])
+// 정책명 → viz JSON 파일명 매핑 (lane-mode 3-action · best-match 입고 · 3door · disruption [20260531_006])
 const POLICY_JSON = {
-  random:"20260531_005/sim_2stage_random.json", fifo:"20260531_005/sim_2stage_fifo.json",
-  greedy:"20260531_005/sim_2stage_greedy.json", heuristic:"20260531_005/sim_2stage_heuristic.json",
-  mip:"20260531_005/sim_2stage_mip.json", rl:"20260531_005/sim_2stage_rl.json", ga:"20260531_005/sim_2stage_ga.json",
+  random:"20260531_006/sim_2stage_random.json", fifo:"20260531_006/sim_2stage_fifo.json",
+  greedy:"20260531_006/sim_2stage_greedy.json", heuristic:"20260531_006/sim_2stage_heuristic.json",
+  mip:"20260531_006/sim_2stage_mip.json", rl:"20260531_006/sim_2stage_rl.json", ga:"20260531_006/sim_2stage_ga.json",
 };
-// seed=42 단일 시뮬레이션 tick (viz JSON 기준, lane-mode 3-action · best-match 입고 · 3door · disruption [20260531_005])
+// seed=42 단일 시뮬레이션 tick (viz JSON 기준, lane-mode 3-action · best-match 입고 · 3door · disruption [20260531_006])
 const POLICY_SIM_TICKS = {
   random:354, fifo:354, greedy:335, heuristic:368, mip:354, rl:366, ga:349,
 };
@@ -1559,7 +1568,7 @@ async function openBenchModal() {
 
   let data;
   try {
-    const res = await fetch("20260531_005/benchmark_2stage_8door.json", {cache:"no-store"});
+    const res = await fetch("20260531_006/benchmark_2stage_8door.json", {cache:"no-store"});
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     data = await res.json();
   } catch(e) {

@@ -32,12 +32,13 @@ def shape_rewards(
     next_obs_list: list,
     actions: list,
     num_doors: int,
+    use_outbound_shaping: bool = True,
+    use_inbound_shaping: bool = True,
 ) -> list:
     """
     3-action shaping (0=skip, 1=request_inbound, 2=boost_outbound):
-    - 인바운드 기회(유휴 도어 + 대기 트럭)가 있는데 action=1이면 +0.5, 아니면 -0.5
-    - 아웃바운드 긴급(timer<10 AND 레인에 화물)인데 action=2이면 +0.5, 아니면 -0.5
-    - 버퍼 포화(fill>1.5) 상태에서 action=1이면 추가 -1.0
+    - use_outbound_shaping: needs_dock 상황에서 action=2 보너스/패널티
+    - use_inbound_shaping:  can_inbound 상황에서 action=1 보너스/패널티
     """
     BUF_FULL = 1.5
 
@@ -46,22 +47,21 @@ def shape_rewards(
         idle_doors = float(obs[5])
         waiting    = float(obs[6])
         lane_queue = float(obs[0])
-        fill_rate  = float(obs[2])   # 내 레인 도크 로딩률
-        buf_fill   = float(obs[4])   # fill ratio [0, 2]
+        fill_rate  = float(obs[2])
+        buf_fill   = float(obs[4])
 
         can_inbound  = idle_doors > 0 and waiting > 0
-        needs_dock   = lane_queue > 0 and fill_rate == 0  # 화물 있지만 도크 없음
+        needs_dock   = lane_queue > 0 and fill_rate == 0
         buf_stressed = buf_fill > BUF_FULL
 
         bonus = 0.0
-        # 도크 재배정이 필요한 상황: action=2가 빈 도크 rescue 발동
-        if needs_dock:
+        if use_outbound_shaping and needs_dock:
             bonus += 0.8 if action == 2 else -0.5
 
-        if can_inbound:
+        if use_inbound_shaping and can_inbound:
             if buf_stressed:
                 if action == 1:
-                    bonus -= 1.0  # 버퍼 포화에서 인바운드 요청 → 패널티
+                    bonus -= 1.0
             else:
                 bonus += 0.4 if action == 1 else -0.3
 
@@ -90,6 +90,8 @@ def train(
     log_interval: int = 100,
     save_dir: str = "checkpoints",
     env_config: dict = None,
+    use_outbound_shaping: bool = True,
+    use_inbound_shaping: bool = True,
 ) -> dict:
 
     os.makedirs(save_dir, exist_ok=True)
@@ -145,12 +147,13 @@ def train(
             next_obs_list, env_rewards, done, info = env.step(actions)
 
             if truck_selection_mode:
-                # broadcast mean team reward to all K truck-slot agents
                 team_reward = float(np.mean(env_rewards))
                 rewards = [team_reward] * n_agents
             else:
                 rewards = shape_rewards(
-                    env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors
+                    env_rewards, obs_list, next_obs_list, actions, env.num_inbound_doors,
+                    use_outbound_shaping=use_outbound_shaping,
+                    use_inbound_shaping=use_inbound_shaping,
                 )
 
             for k in range(n_agents):

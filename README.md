@@ -235,7 +235,7 @@ if score > threshold:
 
 ---
 
-### 실험 2 — Lane-mode 3-action · Best-Match 입고 (20260531_005)
+### 실험 2 — Lane-mode 3-action · Best-Match 입고 (20260531_006)
 
 인바운드 트럭 배정: **Best-Match** (내 레인 화물이 가장 많은 트럭 우선)
 
@@ -258,6 +258,64 @@ if score > threshold:
 - **RL 빈 출발 3.35 → 2.70**: 레인 큐가 충실해져 도크 낭비 감소
 - **FIFO · Greedy · Heuristic 소폭 증가**: action 로직에서 트럭 선택 이점을 충분히 활용하지 못함
 
+---
+
+### 실험 3 — Truck Selection 모드 · GA 최적화 (20260531_006)
+
+**Truck Selection 모드**: 각 에이전트가 "어느 레인의 화물을 요청할 것인가" 대신 "어떤 대기 트럭을 먼저 처리할 것인가"를 결정합니다.
+
+#### 환경 설정 (Lane-mode와 동일 조건)
+
+| 파라미터 | 값 |
+|---|---|
+| `use_truck_selection` | True |
+| `top_k_trucks` | 15 (상위 후보 트럭 수) |
+| 인바운드 도어 | 3 |
+| 트럭 수 / 에피소드 | 50 ~ 70대 |
+| 돌발사항 | 도어 고장 · 2%/스텝 |
+
+#### GA-TruckSel 7-gene 구조
+
+```
+score = w_due × weighted_urgency
+      + w_dest_match × destination_match
+      − w_congestion × expected_congestion
+      + w_buffer × buffer_availability
+      − w_queue_position × queue_pressure
+      + w_rush × is_rush
+
+action = 1 (트럭 처리) if score > threshold else 0 (패스)
+```
+
+- **설정**: POP=30, GEN=50, N_EVAL=5
+- 유전자 저장: `ga/best_genes_truck_selection.json`
+
+#### 벤치마크 결과 (20 에피소드, seed 200~219)
+
+| 정책 | Avg Ticks ↓ | Std | 빈 출발 ↓ | 처리량 (CBM) |
+|---|---:|---:|---:|---:|
+| TruckSel-FIFO | **343.0** | 10.3 | 5.20 | 440.2 |
+| **GA-TruckSel** | **343.0** | 10.3 | 5.20 | 440.2 |
+| TruckSel-Heuristic | 343.1 | 10.4 | **5.10** | 440.2 |
+
+> GA가 초기 Heuristic 유전자(`HEURISTIC_GENES`)를 넘어서지 못하고 수렴. 세 정책이 사실상 동일한 성능을 기록함.
+
+#### 분석: GA가 개선되지 않은 이유
+
+GA-TruckSel의 threshold가 낮게 설정되면 대기 트럭 대부분에 action=1이 선택되어 FIFO와 동일한 동작이 됩니다. 즉, "어떤 트럭을 선택할 것인가"보다 **트럭 배정 순서(score-based ranking)** 자체가 Truck Selection 모드에서는 이미 환경이 처리하므로, 7-gene 스코어링의 개선 여지가 작습니다.
+
+#### Lane-mode vs Truck Selection 모드 비교
+
+| 항목 | Lane-mode (실험 2) | Truck Selection 모드 (실험 3) |
+|---|---|---|
+| 에이전트 결정 | 어느 레인에서 트럭 요청 / 도크 부스트 | 어떤 트럭을 먼저 처리 |
+| 최고 성능 | RL **339.1 ticks** | TruckSel-FIFO/GA **343.0 ticks** |
+| 빈 출발 | RL **2.70** | 5.10~5.20 |
+| action=2 사용 | 있음 (도크 mid-trip 재배정) | 없음 |
+| 핵심 우위 | 도크 낭비 감소 | 트럭 순서 최적화 |
+
+> Lane-mode RL이 Truck Selection 모드보다 약 4 ticks 더 빠름. action=2(도크 재배정)의 유무가 결정적 차이.
+
 ### RL이 FIFO를 이기는 이유
 
 ```
@@ -268,6 +326,41 @@ RL은 action=2로 mid-trip 재배정을 선택적으로 트리거
 → 빈 도크를 화물 있는 레인으로 전환 → 총 출발 횟수·빈 출발 모두 감소
 → 동일 처리량을 더 적은 트립으로 완료 → Total Ticks 단축
 ```
+
+---
+
+### 실험 4 — Reward Shaping Ablation
+
+Reward Shaping의 각 구성요소를 제거했을 때 성능 변화를 측정합니다.
+
+#### Variant 정의
+
+| Variant | Inbound Shaping | Outbound Shaping | 설명 |
+|---|:---:|:---:|---|
+| **full** | ✓ | ✓ | 기준 (현재 설정) |
+| **no_out** | ✓ | ✗ | action=2 guidance 제거 |
+| **no_in** | ✗ | ✓ | action=1 guidance 제거 |
+| **no_shaping** | ✗ | ✗ | R_env만 사용 |
+
+**Inbound Shaping**: `can_inbound` 상황에서 action=1이면 +0.4, 아니면 −0.3 / 버퍼 포화 시 action=1이면 −1.0  
+**Outbound Shaping**: `needs_dock` 상황에서 action=2이면 +0.8, 아니면 −0.5
+
+#### 결과 (1000 에피소드 학습, 20 에피소드 벤치마크)
+
+| Variant | Avg Ticks ↓ | Std | 빈 출발 ↓ | full 대비 |
+|---|---:|---:|---:|---:|
+| 🥇 **full** | **342.3** | 12.4 | 4.20 | — |
+| **no_in** | 342.9 | 13.2 | **3.45** | +0.6 |
+| **no_out** | 343.9 | 10.8 | 4.60 | +1.6 |
+| **no_shaping** | 344.4 | 11.4 | 5.30 | +2.1 |
+
+> 학습 에피소드 1000ep 기준 (실험 1·2는 2000ep). 절대 수치보다 상대 차이가 중요.
+
+#### 분석
+
+- **Outbound Shaping이 더 중요**: 제거 시 +1.6 ticks 악화. action=2(도크 재배정)는 학습하기 어려운 행동이라 명시적 보너스 없이는 충분히 학습되지 않음.
+- **Inbound Shaping 제거 시 빈출발 감소**: no_in은 ticks가 +0.6 증가하지만 빈출발이 3.45로 오히려 개선. 인바운드 보너스가 과도하게 트럭을 들여보내면서 도크 낭비를 일부 유발하는 tradeoff 존재.
+- **Shaping 전체 제거 시 최악**: no_shaping은 ticks와 빈출발 모두 최악. R_env는 출발 시점에만 보상이 발생해 sparse하므로, shaping 없이는 올바른 행동을 학습하는 데 한계가 있음.
 
 ---
 
@@ -308,13 +401,16 @@ lcl_gym/
 │   └── solve_mip.py              # pulp/CBC 기반 매 스텝 MILP 배정
 │
 ├── ga/
-│   ├── ga_policy.py              # GA 정책 (7-gene chromosome)
-│   ├── train_ga.py               # GA 학습 루프 (POP=30, GEN=50)
-│   └── best_genes_2stage.json    # 최적 유전자 저장
+│   ├── ga_policy.py                    # Lane-mode GA 정책 (7-gene chromosome)
+│   ├── train_ga.py                     # Lane-mode GA 학습 루프 (POP=30, GEN=50)
+│   ├── best_genes_2stage.json          # Lane-mode GA 최적 유전자
+│   ├── truck_selection_policy.py       # Truck Selection GA 정책 (7-gene)
+│   ├── train_ga_truck_selection.py     # Truck Selection GA 학습 루프
+│   └── best_genes_truck_selection.json # Truck Selection GA 최적 유전자
 │
 ├── viz/
 │   ├── index2d.html              # Canvas 기반 2D 뷰어 (정책 비교)
-│   ├── 20260531_004/             # 최신 실험 결과 (Lane-mode 3-action)
+│   ├── 20260531_006/             # 최신 실험 결과 (Lane-mode Best-Match)
 │   │   ├── sim_2stage_*.json     # 7개 정책별 시뮬레이션 JSON (seed=42)
 │   │   └── benchmark_2stage_8door.json  # 20 에피소드 집계 벤치마크
 │   └── (이전 실험 디렉토리...)
