@@ -20,7 +20,12 @@
       "Bash(echo \"PID=$!\")",
       "Bash(awk '{print $5, $9}')",
       "Bash(python ga/train_ga_truck_selection.py --pop 30 --gen 50 --eval 5)",
-      "Bash(python rl/run_ablation.py --episodes 1000 --bench 20)"
+      "Bash(python rl/run_ablation.py --episodes 1000 --bench 20)",
+      "Bash(python run_disruption_sweep.py)",
+      "Bash(python train_rl_domain_rand.py)",
+      "Bash(python eval_domain_rand.py)",
+      "Bash(python -c \"import pulp; print\\('pulp ok'\\)\")",
+      "Bash(python ga/train_ga_dr.py)"
     ]
   }
 }

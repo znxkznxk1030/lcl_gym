@@ -10,6 +10,13 @@ class BasePolicy:
         pass
 
 
+class ZeroPolicy(BasePolicy):
+    """항상 action=0 (아무것도 하지 않음) — 하한 기준선."""
+
+    def act(self, obs: np.ndarray, num_doors: int) -> int:
+        return 0
+
+
 class RandomPolicy(BasePolicy):
     """50% 확률로 트럭 요청."""
 
