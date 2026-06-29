@@ -1,0 +1,480 @@
+{
+  "genes": [
+    1.5,
+    1.0,
+    0.3,
+    0.5,
+    0.2,
+    1.0,
+    0.5
+  ],
+  "gene_names": [
+    "w_due",
+    "w_dest_match",
+    "w_congestion",
+    "w_buffer",
+    "w_queue_position",
+    "w_rush",
+    "threshold"
+  ],
+  "fitness": -345.0,
+  "ga_config": {
+    "pop_size": 30,
+    "n_gen": 50,
+    "n_eval": 5,
+    "seed": 0
+  },
+  "env_config": "truck_selection_3door_50~70trucks",
+  "history": [
+    {
+      "gen": 1,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 2,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 3,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 4,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 5,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 6,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 7,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 8,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 9,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 10,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 11,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 12,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 13,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 14,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 15,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 16,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 17,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 18,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 19,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 20,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 21,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 22,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 23,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 24,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 25,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 26,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 27,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 28,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 29,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 30,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 31,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 32,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 33,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 34,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 35,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 36,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 37,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 38,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 39,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 40,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 41,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 42,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 43,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 44,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 45,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 46,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 47,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 48,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 49,
+      "best": -345.0,
+      "mean": -345.0
+    },
+    {
+      "gen": 50,
+      "best": -345.0,
+      "mean": -345.0
+    }
+  ],
+  "benchmark": {
+    "GA-TruckSel": {
+      "total_throughput": {
+        "mean": 440.25,
+        "std": 59.0041312112974
+      },
+      "total_fill_rate": {
+        "mean": 29.34999998043333,
+        "std": 3.933608744797422
+      },
+      "outbound_departures": {
+        "mean": 51.2,
+        "std": 2.9933259094191524
+      },
+      "empty_departures": {
+        "mean": 5.2,
+        "std": 3.1080540535840107
+      },
+      "buffer_overflow_count": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "door_busy_steps": {
+        "mean": 331.55,
+        "std": 37.442589386953465
+      },
+      "outbound_door_busy_steps": {
+        "mean": 956.8,
+        "std": 31.697949460493497
+      },
+      "outbound_door_steps_total": {
+        "mean": 1029.0,
+        "std": 30.828558188796308
+      },
+      "total_steps": {
+        "mean": 343.0,
+        "std": 10.276186062932103
+      },
+      "dwell_time_sum": {
+        "mean": 964.2,
+        "std": 153.84459691519882
+      },
+      "dwell_count": {
+        "mean": 147.2,
+        "std": 16.96938419625179
+      },
+      "disruption_door_failures": {
+        "mean": 6.95,
+        "std": 2.9064583258667245
+      },
+      "disruption_interrupted_trucks": {
+        "mean": 3.1,
+        "std": 2.142428528562855
+      },
+      "disruption_rush_trucks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "disruption_timer_shocks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "total_ticks": {
+        "mean": 343.0,
+        "std": 10.276186062932103
+      }
+    },
+    "TruckSel-FIFO": {
+      "total_throughput": {
+        "mean": 440.25,
+        "std": 59.0041312112974
+      },
+      "total_fill_rate": {
+        "mean": 29.34999998043333,
+        "std": 3.933608744797422
+      },
+      "outbound_departures": {
+        "mean": 51.2,
+        "std": 2.9933259094191524
+      },
+      "empty_departures": {
+        "mean": 5.2,
+        "std": 3.1080540535840107
+      },
+      "buffer_overflow_count": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "door_busy_steps": {
+        "mean": 331.55,
+        "std": 37.442589386953465
+      },
+      "outbound_door_busy_steps": {
+        "mean": 956.8,
+        "std": 31.697949460493497
+      },
+      "outbound_door_steps_total": {
+        "mean": 1029.0,
+        "std": 30.828558188796308
+      },
+      "total_steps": {
+        "mean": 343.0,
+        "std": 10.276186062932103
+      },
+      "dwell_time_sum": {
+        "mean": 964.2,
+        "std": 153.84459691519882
+      },
+      "dwell_count": {
+        "mean": 147.2,
+        "std": 16.96938419625179
+      },
+      "disruption_door_failures": {
+        "mean": 6.95,
+        "std": 2.9064583258667245
+      },
+      "disruption_interrupted_trucks": {
+        "mean": 3.1,
+        "std": 2.142428528562855
+      },
+      "disruption_rush_trucks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "disruption_timer_shocks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "total_ticks": {
+        "mean": 343.0,
+        "std": 10.276186062932103
+      }
+    },
+    "TruckSel-Heuristic": {
+      "total_throughput": {
+        "mean": 440.25,
+        "std": 59.0041312112974
+      },
+      "total_fill_rate": {
+        "mean": 29.34999998043333,
+        "std": 3.933608744797422
+      },
+      "outbound_departures": {
+        "mean": 51.25,
+        "std": 3.080178566252288
+      },
+      "empty_departures": {
+        "mean": 5.1,
+        "std": 3.1764760348537178
+      },
+      "buffer_overflow_count": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "door_busy_steps": {
+        "mean": 331.55,
+        "std": 37.442589386953465
+      },
+      "outbound_door_busy_steps": {
+        "mean": 957.35,
+        "std": 32.25565841833027
+      },
+      "outbound_door_steps_total": {
+        "mean": 1029.45,
+        "std": 31.238557905255483
+      },
+      "total_steps": {
+        "mean": 343.15,
+        "std": 10.41285263508516
+      },
+      "dwell_time_sum": {
+        "mean": 964.0,
+        "std": 154.74882875162578
+      },
+      "dwell_count": {
+        "mean": 147.2,
+        "std": 16.96938419625179
+      },
+      "disruption_door_failures": {
+        "mean": 6.95,
+        "std": 2.9064583258667245
+      },
+      "disruption_interrupted_trucks": {
+        "mean": 3.1,
+        "std": 2.142428528562855
+      },
+      "disruption_rush_trucks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "disruption_timer_shocks": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "total_ticks": {
+        "mean": 343.15,
+        "std": 10.41285263508516
+      }
+    }
+  }
+}
