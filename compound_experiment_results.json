@@ -1,0 +1,152 @@
+{
+  "density_sweep": {
+    "10": {
+      "4": {
+        "partial": 264.5,
+        "complete": 336.45,
+        "improvement_pct": 21.47808021792391
+      },
+      "6": {
+        "partial": 390.3,
+        "complete": 498.25,
+        "improvement_pct": 21.76217606526993
+      },
+      "8": {
+        "partial": 516.1,
+        "complete": 660.05,
+        "improvement_pct": 21.907070276565076
+      },
+      "10": {
+        "partial": 641.9,
+        "complete": 821.85,
+        "improvement_pct": 21.99494088542751
+      },
+      "_dbpr": 0.3726288924468138
+    },
+    "15": {
+      "4": {
+        "partial": 387.6,
+        "complete": 494.55,
+        "improvement_pct": 21.69100506066084
+      },
+      "6": {
+        "partial": 575.0,
+        "complete": 735.35,
+        "improvement_pct": 21.875962192214445
+      },
+      "8": {
+        "partial": 762.4,
+        "complete": 976.15,
+        "improvement_pct": 21.969741007204128
+      },
+      "10": {
+        "partial": 949.8,
+        "complete": 1216.95,
+        "improvement_pct": 22.026431805671244
+      },
+      "_dbpr": 0.3677468703241621
+    },
+    "20": {
+      "4": {
+        "partial": 512.0,
+        "complete": 653.6,
+        "improvement_pct": 21.745178557514357
+      },
+      "6": {
+        "partial": 761.7,
+        "complete": 974.2,
+        "improvement_pct": 21.89676249593394
+      },
+      "8": {
+        "partial": 1011.4,
+        "complete": 1294.8,
+        "improvement_pct": 21.97330518588691
+      },
+      "10": {
+        "partial": 1261.1,
+        "complete": 1615.4,
+        "improvement_pct": 22.019474052581266
+      },
+      "_dbpr": 0.36477837725329343
+    },
+    "30": {
+      "4": {
+        "partial": 763.0,
+        "complete": 967.95,
+        "improvement_pct": 21.24791218407971
+      },
+      "6": {
+        "partial": 1138.2,
+        "complete": 1445.45,
+        "improvement_pct": 21.331629873645376
+      },
+      "8": {
+        "partial": 1513.4,
+        "complete": 1922.95,
+        "improvement_pct": 21.373763254368946
+      },
+      "10": {
+        "partial": 1888.6,
+        "complete": 2400.45,
+        "improvement_pct": 21.399131863464632
+      },
+      "_dbpr": 0.36153730314655785
+    }
+  },
+  "dbpr_sweep": {
+    "1": {
+      "num_outbound": 6,
+      "dbpr": 1.0,
+      "partial": 579.7,
+      "complete": 749.15,
+      "improvement_pct": 22.6189681639191
+    },
+    "2": {
+      "num_outbound": 5,
+      "dbpr": 0.7137199549914144,
+      "partial": 712.1,
+      "complete": 904.25,
+      "improvement_pct": 21.249654409731818
+    },
+    "3": {
+      "num_outbound": 4,
+      "dbpr": 0.5407781805350084,
+      "partial": 809.1,
+      "complete": 1029.3,
+      "improvement_pct": 21.39317983095307
+    },
+    "4": {
+      "num_outbound": 3,
+      "dbpr": 0.43481560237255457,
+      "partial": 918.95,
+      "complete": 1166.55,
+      "improvement_pct": 21.22497964082122
+    },
+    "5": {
+      "num_outbound": 2,
+      "dbpr": 0.36477837725329343,
+      "partial": 1011.4,
+      "complete": 1294.8,
+      "improvement_pct": 21.88755020080321
+    },
+    "6": {
+      "num_outbound": 1,
+      "dbpr": 0.3128641639947406,
+      "partial": 1247.15,
+      "complete": 1597.35,
+      "improvement_pct": 21.923811312486297
+    },
+    "7": {
+      "num_outbound": 0,
+      "dbpr": 0.2670279813247459,
+      "partial": 1440.45,
+      "complete": 1825.9,
+      "improvement_pct": 21.1101374664549
+    }
+  },
+  "policy_check": {
+    "FIFO": 1011.4,
+    "Greedy": 1011.4,
+    "Heuristic": 1011.4
+  }
+}

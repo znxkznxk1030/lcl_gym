@@ -6,17 +6,39 @@ from typing import List, Optional, Tuple
 
 @dataclass
 class Truck:
-    """인바운드 트럭 — 2~3개 목적지 화물 혼재"""
+    """인바운드 트럭 — 2~3개 목적지 화물 혼재
+
+    Compound 모드(논문 Shahmardan & Sajadieh 2020):
+      - truck_type="compound": 여러 목적지 화물(f_idk)을 싣고 와서, 배정된 목적지(assigned_dest)
+        화물은 보유한 채(kept_volume) 나머지만 하차(unloaded_volume)한 뒤 자신의 목적지로 출발.
+      - truck_type="outbound": 단일 목적지 전용 출고 차량 (Stage-1 하차 없음).
+    """
     arrival_time: int
-    shipments: dict  # {lane_id: volume}
+    shipments: dict  # {dest_id: volume}  (compound: f_idk for single product type)
     is_rush: bool = False  # 긴급 트럭 여부 (돌발 발생)
-    routed_lane: int = -1  # compound 모드에서 정책이 지정한 아웃바운드 레인
+    routed_lane: int = -1  # (레거시) compound 모드에서 정책이 지정한 아웃바운드 레인
+    # --- compound 모드 필드 (기본값으로 non-compound 무영향) ---
+    truck_type: str = "inbound"   # "compound" | "outbound" | "inbound"(레거시)
+    assigned_dest: int = -1       # compound 트럭이 보유·운반하는 단일 목적지
+    kept_volume: float = 0.0      # assigned_dest 화물 중 트럭에 남겨둔 양 (partial 하차)
+    unloaded_volume: float = 0.0  # 하차되는(=도어 점유시간 산정) 총량
+    DE: int = 0                   # entering time (도어 위치 도달, 논문 DE_i)
+    DL: int = 0                   # exiting time  (도어 이탈, 논문 DL_i)
 
     def total_volume(self) -> float:
         return sum(self.shipments.values())
 
     def volume_for_lane(self, lane_id: int) -> float:
         return self.shipments.get(lane_id, 0.0)
+
+    def dest_volume(self, dest: int) -> float:
+        return self.shipments.get(dest, 0.0)
+
+    def argmax_dest(self) -> int:
+        """화물량이 가장 많은 목적지 — compound 트럭이 보유할 목적지(논문: 목적지 1개 배정)."""
+        if not self.shipments:
+            return -1
+        return max(self.shipments, key=self.shipments.get)
 
     @property
     def num_destinations(self) -> int:
@@ -116,6 +138,9 @@ class OutboundDoor:
     assigned_dest: int = -1   # 현재 로딩 중인 목적지 (-1 = idle)
     loaded: float = 0.0
     loading_timer: int = 0    # 잔여 로딩 타임스텝
+    # --- compound 모드 ---
+    serving_truck: Optional["Truck"] = None  # 이 도크를 점유한 compound/outbound 트럭 (None=레거시)
+    preloaded: float = 0.0                    # 도킹 시점에 이미 트럭에 실려있던 양 (kept_volume)
 
     @property
     def fill_rate(self) -> float:
@@ -125,12 +150,18 @@ class OutboundDoor:
     def space_remaining(self) -> float:
         return max(self.capacity - self.loaded, 0.0)
 
-    def start_loading(self, dest: int, loading_time: int) -> None:
-        """새 아웃바운드 트럭 수령 + 목적지 할당."""
+    def start_loading(self, dest: int, loading_time: int,
+                      truck: Optional["Truck"] = None, preloaded: float = 0.0) -> None:
+        """새 아웃바운드 트럭 수령 + 목적지 할당.
+
+        compound 모드: truck/preloaded 전달 시 kept_volume(preloaded)을 적재 상태로 시작.
+        """
         self.is_busy = True
         self.assigned_dest = dest
-        self.loaded = 0.0
+        self.loaded = float(preloaded)
         self.loading_timer = loading_time
+        self.serving_truck = truck
+        self.preloaded = float(preloaded)
 
     def add_load(self, volume: float) -> float:
         """소팅 레인에서 화물 탑재. 실제 탑재량 반환."""
@@ -150,15 +181,19 @@ class OutboundDoor:
         self.loading_timer -= 1
         if self.loading_timer <= 0:
             info = {
-                "door_id":   self.door_id,
-                "dest":      self.assigned_dest,
-                "loaded":    self.loaded,
-                "fill_rate": self.fill_rate,
-                "empty":     self.fill_rate < 0.1,
+                "door_id":     self.door_id,
+                "dest":        self.assigned_dest,
+                "loaded":      self.loaded,
+                "fill_rate":   self.fill_rate,
+                "empty":       self.fill_rate < 0.1,
+                "is_compound": self.serving_truck is not None,
+                "preloaded":   self.preloaded,
             }
             self.is_busy = False
             self.assigned_dest = -1
             self.loaded = 0.0
+            self.serving_truck = None
+            self.preloaded = 0.0
             return True, info
         return False, None
 

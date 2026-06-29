@@ -199,6 +199,17 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── Compound Truck · 배정 베이스라인 (Exact/SA/Heuristic/Random · seed3) ──">
+        <option value="sim_compound_assign_exact.json">🥇 Exact (최적)  makespan 900</option>
+        <option value="sim_compound_assign_sa.json">SA  makespan 900</option>
+        <option value="sim_compound_assign_greedy.json">🟢 Greedy (ours)  makespan 943</option>
+        <option value="sim_compound_assign_heuristic.json">Heuristic (VAA)  makespan 943</option>
+        <option value="sim_compound_assign_random.json">Random  makespan 999</option>
+      </optgroup>
+      <optgroup label="── Compound Truck · Partial vs Complete Unloading (논문 재현) ──">
+        <option value="sim_compound_partial.json">🟢 Partial Unloading (부분 하차)  makespan↓</option>
+        <option value="sim_compound_complete.json">🔴 Complete Unloading (완전 하차)  makespan↑</option>
+      </optgroup>
       <optgroup label="── Lane-mode 3-action · Best-Match 입고 · 3door · disruption (20ep 평균) [20260531_006] ──">
         <option value="20260531_006/sim_2stage_rl.json">🥇 RL  avg 339.1 tick  (seed42: 366)</option>
         <option value="20260531_006/sim_2stage_random.json">Random  avg 339.5 tick  (seed42: 354)</option>

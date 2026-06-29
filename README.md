@@ -364,6 +364,130 @@ Reward Shaping의 각 구성요소를 제거했을 때 성능 변화를 측정�
 
 ---
 
+## Compound Truck · Partial Unloading 모드 (논문 재현)
+
+Shahmardan & Sajadieh (2020) *"Truck scheduling in a multi-door cross-docking center with
+partial unloading"* 의 **compound truck + 부분 하차(partial unloading)** 모델을 본 시뮬레이터에
+추가한 모드입니다. (`compound_trucks=True`)
+
+### 모델 개요
+
+| 트럭 종류 | 역할 |
+|---|---|
+| **Compound truck** | 여러 목적지 화물(`f_idk`)을 싣고 입고. 배정된 단일 목적지 화물은 **내리지 않고 보유(kept)**, 나머지만 하차한 뒤 자신의 목적지 통합수요를 싣고 출발 (= 그 목적지의 출고 차량이 됨) |
+| **Outbound truck** | compound가 담당하지 않는 나머지 목적지 전용. Stage-1 하차 없이 도크에서 적재 후 출발 |
+
+- **목적지 배정(Constraint 16)**: 각 목적지를 정확히 **1대**가 담당 → `#compound + #outbound = #destinations`.
+  compound 트럭은 보유량(`f_i,d`)을 최대화하는 **distinct greedy 매칭**으로 서로 다른 목적지에 배정.
+- **부분 하차 vs 완전 하차**:
+  - `partial`: 배정 목적지 화물(`kept_volume`)을 보유 → 하차량 = `total − kept`, lane→dock 사이클 우회.
+  - `complete`: 전량 하차 → 하차량 = `total`, 배정 목적지 화물도 lane을 거쳐 재적재.
+- **도어 점유시간** = `DE + 하차량 × t_k` (부분 하차는 하차량이 적어 점유시간 단축).
+- **적재 시작(Constraint 3/5)**: 미배정 목적지 하차가 모두 끝난 뒤 도크 적재 시작.
+- **목적(objective)**: **makespan(total ticks)** 최소화. 모든 트럭은 t=0에 가용.
+
+> 기존 lane-agent 인터페이스(obs `9+D`, action `{0,1,2}`)를 그대로 유지하므로 FIFO/Greedy/Heuristic
+> 정책이 수정 없이 동작합니다. compound 모드는 **내부 동역학만** 바꾸며, `compound_trucks=False`
+> 경로는 byte-for-byte 동일합니다(회귀 검증 통과).
+
+### 공통 환경 설정 (논문 민감도 분석)
+
+| 항목 | 값 |
+|---|---|
+| Compound 트럭 | 5 |
+| Outbound 트럭 | 2 (잔여 목적지) |
+| 목적지 / 도어 | 7 / 5 |
+| `f_idk` (수요) | U(0, demand_max) |
+| `t_k` (단위 적재/하차) | 고정 4/6/8/10 (또는 U(0,20)) |
+| `DE_i`, `DL_i` | U(3, 10) |
+
+---
+
+### 실험 A — 배정 베이스라인 (Exact / SA / Heuristic / Random)
+
+```bash
+python run_compound_baselines.py
+```
+
+논문은 lane-agent tick 정책이 아니라 **compound 트럭의 목적지 배정을 최적화하는 알고리즘**
+(Exact·Heuristic·Simulated Annealing)을 makespan으로 비교한다(Table 2/4). 본 환경에서도 makespan을
+실제로 결정하는 것은 **목적지 배정**이며(FIFO/Greedy/Heuristic lane 정책은 배정이 고정되어 동일 결과),
+이를 논문의 배정 베이스라인으로 교체해 비교한다.
+
+> 배정이 정해지면 makespan은 결정적이며, 해석 공식이 시뮬레이터 makespan과 **정확히 일치**함을 매 seed
+> 실제 step 시뮬레이션으로 재확인한다(80/80 일치). 따라서 Exact 전수탐색·SA를 빠르게 수행한다.
+
+**배정 전략 ([compound_baselines.py](compound_baselines.py))**
+
+| 전략 | 내용 |
+|---|---|
+| **Exact** | 모든 distinct 배정 전수탐색 → makespan 최소 (소규모 최적해) |
+| **SA** | Heuristic 초기해에서 이웃탐색(목적지 swap/reassign) + 냉각 |
+| **Greedy (ours)** | **본 환경 기본 배정** — (트럭,목적지,보유량)을 보유량 내림차순으로 distinct 탐욕 배정 |
+| **Heuristic (H)** | Vogel 근사법(VAA)으로 보유량 `f_i,d` 합 최대화 (논문 Step 1–2) |
+| **Random** | 무작위 distinct 배정 (하한 기준) |
+
+> **"우리 모델"에 대하여**: 본 리포트의 RL(IQL+DQN)은 매 tick lane action `{0,1,2}`를 정하는 **실시간 정책**이며,
+> compound 모드에서 makespan을 좌우하는 **목적지 배정**은 결정하지 않는다(그래서 FIFO/Greedy/Heuristic lane
+> 정책이 모두 동일 makespan). 따라서 우리 시스템이 실제로 수행하는 배정 의사결정인 **Greedy(ours)**
+> (`_build_compound_schedule` 기본 로직)를 논문 베이스라인과 함께 비교한다.
+
+**결과 (t_k=8, demand_max=20, 20 seeds, partial unloading)**
+
+| 전략 | Avg makespan ↓ | Std | Exact 대비 gap | 속도(ms/seed) |
+|---|---:|---:|---:|---:|
+| 🥇 **Exact** | **994.4** | 103.8 | +0.00% | 17.3 |
+| **SA** | 994.8 | 103.9 | **+0.04%** | 5.7 |
+| 🟢 **Greedy (ours)** | **1011.4** | 103.4 | **+1.78%** | 0.01 |
+| Heuristic | 1105.0 | 109.1 | +11.37% | 0.06 |
+| Random | 1133.2 | 103.0 | +14.28% | 0.01 |
+
+**설정 스윕 (Exact 대비 gap %)**
+
+| (t_k, demand_max) | Exact avg | SA | Greedy (ours) | Heuristic | Random |
+|---|---:|---:|---:|---:|---:|
+| (4, 10) | 260 | +0.20% | +1.77% | +10.02% | +13.78% |
+| (4, 20) | 503 | +0.06% | +1.83% | +11.25% | +14.13% |
+| (4, 30) | 744 | +0.05% | +2.53% | +10.21% | +14.21% |
+| (8, 10) | 508 | +0.20% | +1.66% | +10.23% | +14.06% |
+| (8, 20) | 994 | +0.04% | +1.78% | +11.37% | +14.28% |
+| (8, 30) | 1476 | +0.02% | +2.56% | +10.34% | +14.39% |
+
+> **분석**: SA는 Exact(최적) 대비 평균 **+0.04%**로 사실상 최적에 도달한다. 주목할 점은 **우리 환경의 기본
+> 배정 Greedy(ours)가 +1.78%로 SA 다음 2위**이며, 논문의 구성적 Heuristic(VAA, +11%)을 **크게 능가**한다는
+> 것이다(전역 탐욕이 Vogel 후회법보다 makespan 최적에 더 근접). 순서(SA ≈ Exact < **Greedy(ours)** ≪
+> Heuristic < Random)는 전 설정 스윕에서 일관되며, 이는 논문의 흐름 — *휴리스틱은 빠르나 gap이 있고
+> SA가 최적 근처로 수렴* — 과 부합한다.
+
+---
+
+### 실험 B — 부분 하차 vs 완전 하차 (makespan 효과)
+
+```bash
+python run_compound_experiment.py
+```
+
+- **표 1** (demand_max × t_k): 부분 하차가 완전 하차 대비 makespan을 **~21–22% 단축** (논문 Table 6/7 형식).
+- **표 2** (compound 트럭 수 → DBPR 1.00–0.27 가변): 전 구간 일관된 단축.
+- **표 3**: FIFO/Greedy/Heuristic **동일 makespan** (compound 도킹은 정책 무관 → 실험 A의 배정 베이스라인으로 비교).
+- 산출물: `compound_experiment_results.json`, `viz/sim_compound_{partial,complete}.json`.
+
+> **결과 해석**: 본 모델은 입고 도어·출고 도크가 분리된 **병렬 2단계 flow** 구조라, makespan이
+> "가장 긴 단일 트럭 작업"으로 결정됩니다. 따라서 단축율은 목적지 수가 정하는 kept 비율 부근(~22%)에서
+> 안정적이며, 논문 Table 7의 *DBPR 단조증가* 추세(도어 공유 시퀀싱·changeover 구조에서 유래)는
+> 재현하지 않습니다. 부분 하차가 makespan을 단축한다는 **핵심 결론은 견고하게 재현**됩니다.
+
+### 시각화
+
+`open viz/index2d.html` → 드롭다운 상단 Compound Truck 그룹에서 재생:
+
+- **배정 베이스라인** (seed3, 동일 트럭·배정만 상이): Exact/SA `makespan 900` < Heuristic `943` < Random `999`
+  → `viz/sim_compound_assign_{exact,sa,heuristic,random}.json` (`run_compound_baselines.py` 생성)
+- **Partial vs Complete**: `makespan 943 vs 1204` (seed3·t_k=8·demand_max=20)
+  → `viz/sim_compound_{partial,complete}.json` (`run_compound_experiment.py` 생성)
+
+---
+
 ## Action=2 Mid-trip 재배정 메커니즘
 
 ```python
