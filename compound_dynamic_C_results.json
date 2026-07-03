@@ -1,0 +1,88 @@
+{
+  "0.0": {
+    "RL": 327.85,
+    "FIFO": 328.8,
+    "Greedy": 329.9,
+    "Heuristic": 330.8,
+    "Random": 329.5
+  },
+  "0.02": {
+    "RL": 327.05,
+    "FIFO": 330.55,
+    "Greedy": 329.75,
+    "Heuristic": 331.4,
+    "Random": 330.7
+  },
+  "0.05": {
+    "RL": 332.05,
+    "FIFO": 332.3,
+    "Greedy": 330.55,
+    "Heuristic": 331.4,
+    "Random": 332.6
+  },
+  "0.1": {
+    "RL": 335.55,
+    "FIFO": 335.5,
+    "Greedy": 331.05,
+    "Heuristic": 333.65,
+    "Random": 334.9
+  },
+  "0.15": {
+    "RL": 824.2,
+    "FIFO": 340.5,
+    "Greedy": 337.4,
+    "Heuristic": 338.6,
+    "Random": 337.15
+  },
+  "0.2": {
+    "RL": 2282.55,
+    "FIFO": 354.9,
+    "Greedy": 350.2,
+    "Heuristic": 348.75,
+    "Random": 348.65
+  },
+  "empty_departures": {
+    "0.0": {
+      "RL": 9.25,
+      "FIFO": 13.35,
+      "Greedy": 9.4,
+      "Heuristic": 9.65,
+      "Random": 13.2
+    },
+    "0.02": {
+      "RL": 8.55,
+      "FIFO": 12.1,
+      "Greedy": 8.8,
+      "Heuristic": 8.55,
+      "Random": 12.35
+    },
+    "0.05": {
+      "RL": 9.3,
+      "FIFO": 12.25,
+      "Greedy": 8.75,
+      "Heuristic": 9.05,
+      "Random": 12.3
+    },
+    "0.1": {
+      "RL": 9.15,
+      "FIFO": 12.5,
+      "Greedy": 9.2,
+      "Heuristic": 8.8,
+      "Random": 12.45
+    },
+    "0.15": {
+      "RL": 82.8,
+      "FIFO": 14.1,
+      "Greedy": 9.55,
+      "Heuristic": 9.0,
+      "Random": 13.7
+    },
+    "0.2": {
+      "RL": 303.1,
+      "FIFO": 14.9,
+      "Greedy": 10.25,
+      "Heuristic": 9.6,
+      "Random": 14.9
+    }
+  }
+}

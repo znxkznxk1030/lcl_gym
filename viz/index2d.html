@@ -199,9 +199,18 @@
   </div>
   <div class="ctrl">
     <select id="srcSel">
+      <optgroup label="── Compound Truck · 동적 환경 (RL 우위, seed4 · 희소 도크+고장) ──">
+        <option value="sim_compound_dynamic_rl.json">🥇 RL (action=2 재배치)  makespan 325</option>
+        <option value="sim_compound_dynamic_fifo.json">FIFO (재배치 없음)  makespan 344</option>
+      </optgroup>
+      <optgroup label="── Compound Truck · Door Disruption 하 배정 (seed3, prob=0.05) ──">
+        <option value="sim_compound_disrupt_rldr.json">🤖 RL-DR (disruption 학습)  makespan 998</option>
+        <option value="sim_compound_disrupt_greedy.json">🟢 Greedy (ours)  makespan 1030</option>
+      </optgroup>
       <optgroup label="── Compound Truck · 배정 베이스라인 (Exact/SA/Heuristic/Random · seed3) ──">
         <option value="sim_compound_assign_exact.json">🥇 Exact (최적)  makespan 900</option>
         <option value="sim_compound_assign_sa.json">SA  makespan 900</option>
+        <option value="sim_compound_assign_rl.json">🤖 RL (ours, DQN)  makespan 919</option>
         <option value="sim_compound_assign_greedy.json">🟢 Greedy (ours)  makespan 943</option>
         <option value="sim_compound_assign_heuristic.json">Heuristic (VAA)  makespan 943</option>
         <option value="sim_compound_assign_random.json">Random  makespan 999</option>

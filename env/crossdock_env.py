@@ -23,6 +23,8 @@ DEFAULT_CONFIG = {
     "num_outbound_doors": 8,           # Stage 2 아웃바운드 도크 수 (compound_trucks=False 시만 사용)
     "buffer_capacity": 1e9,            # 사실상 무한 버퍼 (제약 없음)
     "compound_trucks": False,          # True: 인바운드 트럭이 아웃바운드 트럭으로 전환 (동일 차량)
+    "compound_dynamic": False,         # True: compound 트럭 + 동적 도착 + 동적 희소 도크(action=2) — RL 우위 환경
+    "compound_kept_rule": "argmax",    # 동적 compound 보유목적지 선택: argmax(최대)/random/min — 배정 레버 분석용
     # --- Compound truck + partial unloading (논문 Shahmardan & Sajadieh 2020) ---
     "partial_unloading": True,         # True=부분하차(배정목적지 보유) / False=완전하차(전부 하차 후 재적재)
     "num_compound_trucks": 5,          # compound 트럭 수 (I)
@@ -125,6 +127,8 @@ class CrossDockEnv:
         self.use_scheduled_arrivals: bool = cfg["use_scheduled_arrivals"]
         self.all_trucks_at_start: bool   = cfg["all_trucks_at_start"]
         self.compound_trucks: bool       = cfg["compound_trucks"]
+        self.compound_dynamic: bool      = cfg["compound_dynamic"]
+        self.compound_kept_rule: str     = cfg["compound_kept_rule"]
         # Compound truck + partial unloading 설정
         self.partial_unloading: bool     = cfg["partial_unloading"]
         self.unit_load_time              = cfg["unit_load_time"]
@@ -224,8 +228,8 @@ class CrossDockEnv:
         self.lanes = [Lane(lane_id=k) for k in range(self.num_lanes)]
         self.doors = [Door(door_id=i) for i in range(self.num_inbound_doors)]
 
-        if self.compound_trucks:
-            # Compound mode: 고정 수의 물리 도크, 초기에는 모두 유휴
+        if self.compound_trucks and not self.compound_dynamic:
+            # 정적 Compound mode: 고정 수의 물리 도크, 초기에는 모두 유휴
             # 인바운드 처리 완료 트럭은 outbound_waiting 대기열에 줄을 섬
             self.outbound_doors = [
                 OutboundDoor(door_id=i, capacity=self.outbound_capacity)
@@ -337,8 +341,8 @@ class CrossDockEnv:
             and not any(d.is_busy for d in self.doors)
             and all(lane.queue_volume == 0 for lane in self.lanes)
         )
-        if self.compound_trucks:
-            # Compound mode: 레인 비고 + 도크 대기열 비고 + 도킹 중인 트럭 출발까지 대기
+        if self.compound_trucks and not self.compound_dynamic:
+            # 정적 Compound mode: 레인 비고 + 도크 대기열 비고 + 도킹 중인 트럭 출발까지 대기
             # (kept_volume 트럭은 어떤 레인에도 없으므로 outbound_waiting 체크 필수)
             all_dispatched = (
                 base_idle
@@ -346,6 +350,7 @@ class CrossDockEnv:
                 and not any(od.is_busy for od in self.outbound_doors)
             )
         else:
+            # 비-compound + 동적 compound: 표준 종료 조건
             all_dispatched = base_idle and not any(od.is_busy for od in self.outbound_doors)
         done = all_dispatched or self.t >= self.episode_length
         obs = self.get_obs()
@@ -394,15 +399,15 @@ class CrossDockEnv:
                 od_timer = float(od.loading_timer)
             else:
                 od_fill  = 0.0
-                if self.compound_trucks:
-                    od_timer = 0.0  # 인바운드 단계: urgency 최대 (1/(0+1)=1.0)
+                if self.compound_trucks and not self.compound_dynamic:
+                    od_timer = 0.0  # 정적 인바운드 단계: urgency 최대 (1/(0+1)=1.0)
                 else:
                     od_timer = float(self.outbound_loading_time_max)
 
             # 인바운드 도어 매칭도
             door_matches = np.zeros(self.num_inbound_doors, dtype=np.float32)
             if self.waiting_trucks:
-                if self.compound_trucks:
+                if self.compound_trucks and not self.compound_dynamic:
                     # 단일 목적지 라우팅: 0.5 기반 + 상대 볼륨 반영
                     # → 동일 볼륨 레인에서도 0.5 > 0 이 되어 Heuristic blocking 방지
                     max_q = max(la.queue_volume for la in self.lanes) + 1e-6
@@ -528,10 +533,11 @@ class CrossDockEnv:
             and not any(d.is_busy for d in self.doors)
         )
 
-        if self.compound_trucks:
-            # Compound mode: 일반 가드보다 먼저 처리 (kept-volume 트럭은 레인이 비어도 도킹·출발해야 함)
+        if self.compound_trucks and not self.compound_dynamic:
+            # 정적 Compound mode: 일반 가드보다 먼저 처리 (kept-volume 트럭은 레인이 비어도 도킹해야 함)
             self._assign_outbound_compound(idle_ods, no_more_incoming)
             return
+        # compound_dynamic 은 아래 비-compound 동적 분기(희소 도크 + action=2) 사용
 
         if no_more_incoming and all(lane.queue_volume == 0 for lane in self.lanes):
             # 레인이 모두 비었으면 새 트럭 배정 중단
@@ -626,8 +632,8 @@ class CrossDockEnv:
         """
         if actions is None or self.use_truck_selection:
             return
-        if self.compound_trucks:
-            # compound 모드는 도크가 목적지 고정(대기 트럭)이라 mid-trip 재배정이 무의미·위험
+        if self.compound_trucks and not self.compound_dynamic:
+            # 정적 compound 모드는 도크가 목적지 고정(대기 트럭)이라 mid-trip 재배정이 무의미·위험
             return
 
         # action=2이고 화물이 있지만 아직 도크가 없는 레인
@@ -744,6 +750,8 @@ class CrossDockEnv:
             complete이면 전량 하차(unloaded_volume = total) 후 도크에서 재적재.
           - outbound 트럭: compound가 담당하지 않는 나머지 목적지마다 1대씩. Stage-1 하차 없음.
         """
+        if self.compound_dynamic:
+            return self._build_compound_dynamic_schedule()
         nD = self.num_destinations
         I = self.num_compound_trucks
 
@@ -808,6 +816,50 @@ class CrossDockEnv:
 
         return compounds + outbounds
 
+    def _build_compound_dynamic_schedule(self) -> List[Truck]:
+        """동적 compound: 보고서형 트럭 분포(클러스터 도착, 2~3목적지 혼재 화물)에
+        부분 하차를 추가. 각 트럭은 화물이 가장 많은 목적지를 보유(kept)·직접 운반하고 나머지만 하차.
+        도크는 동적 희소 도크가 레인을 비우며 처리(action=2 재배치) → RL 우위 환경.
+        트럭 수·화물 분포는 비-compound 동적 env와 동일하게 유지(기존 RL in-distribution)."""
+        n = int(self.rng.integers(self.arrival_count_min, self.arrival_count_max + 1))
+        time_window = self.arrival_time_window if self.arrival_time_window else self.episode_length
+        base = np.linspace(0.1, 0.9, self.arrival_cluster_count)
+        jitter = self.rng.uniform(-0.05, 0.05, size=self.arrival_cluster_count)
+        centers = np.clip(base + jitter, 0.05, 0.95) * time_window
+        cluster_ids = self.rng.integers(0, self.arrival_cluster_count, size=n)
+        spread = time_window * 0.08
+        raw = centers[cluster_ids] + self.rng.normal(0, spread, size=n)
+        arrival_times = sorted(int(np.clip(t, 0, time_window - 1)) for t in raw)
+
+        schedule = []
+        for t in arrival_times:
+            n_dest = int(self.rng.integers(self.inbound_min_dest, self.inbound_max_dest + 1))
+            dest_lanes = self.rng.choice(self.num_lanes, size=min(n_dest, self.num_lanes), replace=False)
+            volumes = self.rng.integers(max(1, int(self.inbound_vol_min)), int(self.inbound_vol_max) + 1,
+                                        size=len(dest_lanes))
+            shipments = {int(k): int(v) for k, v in zip(dest_lanes, volumes)}
+            DE = int(self.rng.integers(self.entering_time_min, self.entering_time_max + 1))
+            tr = Truck(arrival_time=t, shipments=shipments, truck_type="compound", DE=DE)
+            # 보유 목적지 선택(배정 레버): argmax=하역최소(greedy 최적) / random / min=하역최대(worst)
+            keys = list(shipments.keys())
+            if self.compound_kept_rule == "random":
+                d = int(self.rng.choice(keys))
+            elif self.compound_kept_rule == "min":
+                d = int(min(keys, key=lambda k: shipments[k]))
+            else:
+                d = tr.argmax_dest()
+            tr.assigned_dest = d
+            total = tr.total_volume()
+            kept = tr.dest_volume(d)
+            if self.partial_unloading:
+                tr.kept_volume = float(kept)
+                tr.unloaded_volume = float(total - kept)
+            else:
+                tr.kept_volume = 0.0
+                tr.unloaded_volume = float(total)
+            schedule.append(tr)
+        return schedule
+
     def _generate_arrivals(self) -> List[Truck]:
         if self.use_scheduled_arrivals:
             trucks = []
@@ -833,7 +885,25 @@ class CrossDockEnv:
 
     def _process_released(self, trucks: List[Truck]) -> int:
         for truck in trucks:
-            if self.compound_trucks and truck.truck_type == "compound":
+            if self.compound_dynamic and truck.truck_type == "compound":
+                # 동적 compound: 부분 하차 — 보유 목적지(kept)는 직접 운반(즉시 출고),
+                # 나머지 목적지 화물만 레인에 하차 → 동적 희소 도크가 처리(action=2).
+                for dest, volume in truck.shipments.items():
+                    if dest == truck.assigned_dest and self.partial_unloading:
+                        continue  # kept: 트럭이 직접 운반
+                    vol = int(volume)
+                    self.buffer += vol
+                    self.lanes[dest].add_volume(vol)
+                kept = float(truck.kept_volume) if self.partial_unloading else 0.0
+                if kept > 0:
+                    self.metrics["total_throughput"]   += kept
+                    self.metrics["compound_throughput"] += kept
+                    self.metrics["compound_departures"] += 1
+                    self.metrics["kept_volume_delivered"] += kept
+                dwell = self.t - truck.arrival_time
+                self.metrics["dwell_time_sum"] += dwell
+                self.metrics["dwell_count"]    += 1
+            elif self.compound_trucks and truck.truck_type == "compound":
                 # 부분 하차: 배정 목적지(assigned_dest) 화물은 트럭이 보유(kept_volume) → lane 우회.
                 # 완전 하차: 전 목적지 화물을 lane에 하차(배정 목적지도 재적재 대상).
                 for dest, volume in truck.shipments.items():
@@ -979,7 +1049,8 @@ class CrossDockEnv:
                     self.disruption_door_failure_dur_min,
                     self.disruption_door_failure_dur_max + 1,
                 ))
-                interrupted = door.fail(duration)
+                # compound 모드: 고장 시 하역 재개(진행분 보존) — 긴 하역시간의 런어웨이 방지
+                interrupted = door.fail(duration, evict=not self.compound_trucks)
                 self.disruption_log.append({
                     "type": "door_failure", "door_id": door.door_id, "duration": duration,
                     "interrupted_truck": bool(interrupted),

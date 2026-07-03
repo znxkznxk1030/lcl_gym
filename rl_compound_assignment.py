@@ -26,15 +26,54 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from env.entities import Truck
+from env.crossdock_env import CrossDockEnv, DEFAULT_CONFIG
+from env.policies import FIFOPolicy
 from rl.networks import NumpyMLP
 from compound_baselines import makespan_analytic, assign_greedy
 
 CKPT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints_compound_rl")
-WEIGHTS = os.path.join(CKPT_DIR, "weights_final.npz")
+WEIGHTS = os.path.join(CKPT_DIR, "weights_final.npz")        # 무결(disruption 없음) 학습
+DR_WEIGHTS = os.path.join(CKPT_DIR, "weights_dr.npz")        # disruption 하 학습 (RL-DR)
 
 I_TRUCKS = 5
 N_DEST = 7
 SCALE = 100.0  # 보상 정규화 (-makespan/SCALE)
+
+# disruption 학습/평가 공통 설정 (논문 민감도 분석 + 도어 고장)
+DR_DEMAND_MAX = 20
+DR_T_K = 8
+DR_PROB = 0.05  # 도어 고장 확률/스텝 (resume-on-failure 모델)
+
+
+def disrupt_cfg(prob=DR_PROB, demand_max=DR_DEMAND_MAX, t_k=DR_T_K):
+    return {
+        **DEFAULT_CONFIG, "compound_trucks": True, "partial_unloading": True,
+        "all_trucks_at_start": True, "use_scheduled_arrivals": True,
+        "num_lanes": N_DEST, "num_destinations": N_DEST, "num_inbound_doors": 5,
+        "num_outbound_doors": N_DEST, "num_compound_trucks": I_TRUCKS,
+        "outbound_capacity": 1e6, "buffer_capacity": 1e9, "episode_length": 200000,
+        "unit_load_time": t_k, "demand_min": 0, "demand_max": demand_max,
+        "enable_disruptions": prob > 0, "disruption_door_failure": prob > 0,
+        "disruption_door_failure_prob": prob,
+        "disruption_door_failure_duration_min": 10,
+        "disruption_door_failure_duration_max": 20,
+    }
+
+
+def peek_env_trucks(cfg, seed):
+    env = CrossDockEnv(config=cfg, seed=seed); env.reset()
+    return [t for t in env.waiting_trucks if t.truck_type == "compound"]
+
+
+def sim_makespan_env(cfg, seed, override):
+    c = {**cfg, "compound_dest_override": override}
+    env = CrossDockEnv(config=c, seed=seed); obs = env.reset()
+    pols = [FIFOPolicy() for _ in range(env.num_lanes)]
+    done = False
+    while not done:
+        obs, _, done, _ = env.step(
+            [pols[k].act(obs[k], env.num_inbound_doors) for k in range(env.num_lanes)])
+    return env.t
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -147,14 +186,80 @@ def train(episodes=40000, hidden=64, lr=5e-4, batch=128,
     return net
 
 
-def load_policy():
-    """학습된 RL 배정 정책 로드 (STRATEGIES 용). 가중치 없으면 None."""
-    if not os.path.exists(WEIGHTS):
-        return None
-    hidden = int(np.load(WEIGHTS)["W1"].shape[1])  # 저장된 가중치에서 hidden 자동 인식
-    net = NumpyMLP(obs_size=3 * N_DEST + 1, hidden=hidden, n_actions=N_DEST)
-    net.load(WEIGHTS)
+def train_disrupt(episodes=8000, hidden=128, lr=5e-4, batch=128, buf_cap=40000,
+                  seed=0, n_train_seeds=2500, prob=DR_PROB, verbose=True):
+    """Door disruption 하에서 makespan을 최소화하도록 배정을 학습 (RL-DR).
+
+    disruption이 있으면 해석 공식이 무효 → 시뮬레이터 makespan을 보상으로 사용.
+    보상 = (greedy_sim − rl_sim)/(greedy_sim+1), 동일 seed(트럭+고장 realization 고정).
+    greedy_sim 은 seed별 1회 캐시. 학습 seed 풀(1000~)과 평가 seed(0~19)를 분리.
+    """
+    nD = N_DEST; obs_size = 3 * nD + 1
+    rng = np.random.default_rng(seed)
+    net = NumpyMLP(obs_size=obs_size, hidden=hidden, n_actions=nD, lr=lr, seed=seed)
+    buf = deque(maxlen=buf_cap)
+    eps, eps_min, eps_decay = 1.0, 0.05, 0.9996
+    cfg = disrupt_cfg(prob=prob)
+    train_seeds = list(range(1000, 1000 + n_train_seeds))
+    greedy_cache, trucks_cache = {}, {}
+    recent = deque(maxlen=1000)
+
+    def get(seed):
+        if seed not in trucks_cache:
+            comp = peek_env_trucks(cfg, seed)
+            trucks_cache[seed] = comp
+            greedy_cache[seed] = sim_makespan_env(cfg, seed, assign_greedy(comp, nD))
+        return trucks_cache[seed], greedy_cache[seed]
+
+    for ep in range(episodes):
+        s = int(rng.choice(train_seeds))
+        comp, g_mk = get(s)
+        used = set(); assign = {}; traj = []
+        for i in range(I_TRUCKS):
+            st = build_state(comp, i, used, DR_DEMAND_MAX, nD)
+            va = valid_actions(used, nD)
+            a = int(rng.choice(va)) if rng.random() < eps else max(va, key=lambda d: net.forward(st)[d])
+            used.add(a); assign[i] = a; traj.append((st, a))
+        rl_mk = sim_makespan_env(cfg, s, assign)
+        ret = (g_mk - rl_mk) / (g_mk + 1.0)
+        recent.append(ret)
+        for st, a in traj:
+            buf.append((st, a, ret))
+        if len(buf) >= batch:
+            idx = rng.choice(len(buf), size=batch, replace=False)
+            S = np.array([buf[j][0] for j in idx], np.float32)
+            A = np.array([buf[j][1] for j in idx], np.int64)
+            T = np.array([buf[j][2] for j in idx], np.float32)
+            net.update(S, A, T)
+        eps = max(eps_min, eps * eps_decay)
+        if verbose and ep % 1000 == 0 and recent:
+            print(f"ep {ep:6d}  eps={eps:.3f}  rel_vs_greedy={np.mean(recent):+.4f}  "
+                  f"(cached_seeds={len(greedy_cache)})", flush=True)
+
+    os.makedirs(CKPT_DIR, exist_ok=True)
+    net.save(DR_WEIGHTS)
+    if verbose:
+        print(f"[저장] {DR_WEIGHTS}")
     return net
+
+
+def _load(path):
+    if not os.path.exists(path):
+        return None
+    hidden = int(np.load(path)["W1"].shape[1])
+    net = NumpyMLP(obs_size=3 * N_DEST + 1, hidden=hidden, n_actions=N_DEST)
+    net.load(path)
+    return net
+
+
+def load_policy():
+    """무결(disruption 없음) 학습 RL 배정 정책. 가중치 없으면 None."""
+    return _load(WEIGHTS)
+
+
+def load_policy_dr():
+    """Door disruption 하 학습 RL-DR 배정 정책. 가중치 없으면 None."""
+    return _load(DR_WEIGHTS)
 
 
 if __name__ == "__main__":

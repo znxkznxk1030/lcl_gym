@@ -180,22 +180,32 @@ def main():
               f"{gap:+11.2f}% | {ms:8.2f}")
 
     # t_k / demand 스윕 (Exact 대비 gap 추이)
-    print(f"\n[스윕] 설정별 Exact 대비 gap(%) — SA / Greedy(ours) / Heuristic / Random\n")
-    print(f"{'(t_k, dmax)':>14} | {'Exact avg':>10} | {'SA':>7} | {'Greedy':>8} | {'Heuristic':>10} | {'Random':>8}")
-    print("-" * 66)
+    rl_col = "  RL(ours)" if rl_on else ""
+    print(f"\n[스윕] 설정별 Exact 대비 gap(%) — SA / Greedy(ours) /"
+          + (" RL(ours) /" if rl_on else "") + " Heuristic / Random\n")
+    print(f"{'(t_k, dmax)':>14} | {'Exact avg':>10} | {'SA':>7} | {'Greedy':>8} |"
+          + (f"{'RL':>8} |" if rl_on else "") + f" {'Heuristic':>10} | {'Random':>8}")
+    print("-" * (66 + (9 if rl_on else 0)))
     for t_k in (4, 8):
         for dmax in (10, 20, 30):
             p, _, _ = evaluate(t_k, dmax)
             o = np.array(p["Exact"], float)
             def g(n): return 100.0 * np.mean((np.array(p[n], float) - o) / o)
-            results["sweep"][f"{t_k}_{dmax}"] = {
+            entry = {
                 "exact_avg": float(o.mean()),
                 "sa_gap": float(g("SA")),
                 "greedy_gap": float(g("Greedy")),
                 "heuristic_gap": float(g("Heuristic")),
                 "random_gap": float(g("Random"))}
-            print(f"{'(%d, %d)'%(t_k,dmax):>14} | {o.mean():10.0f} | "
-                  f"{g('SA'):+6.2f}% | {g('Greedy'):+7.2f}% | {g('Heuristic'):+9.2f}% | {g('Random'):+7.2f}%")
+            if rl_on:
+                entry["rl_gap"] = float(g("RL"))
+            results["sweep"][f"{t_k}_{dmax}"] = entry
+            row = (f"{'(%d, %d)'%(t_k,dmax):>14} | {o.mean():10.0f} | "
+                   f"{g('SA'):+6.2f}% | {g('Greedy'):+7.2f}% |")
+            if rl_on:
+                row += f" {g('RL'):+6.2f}% |"
+            row += f" {g('Heuristic'):+9.2f}% | {g('Random'):+7.2f}%"
+            print(row)
 
     out_json = os.path.join(here, "compound_baseline_results.json")
     with open(out_json, "w", encoding="utf-8") as f:
@@ -207,9 +217,9 @@ def main():
     cfg = make_cfg(T_K, DEMAND_MAX)
     comp, out, tk, nD = peek_trucks(cfg, viz_seed)
     print(f"\n[viz] seed={viz_seed} 전략별 배정 재생 JSON 저장 (동일 트럭, 배정만 상이)")
-    for name, fn in STRATEGIES.items():
+    for name, fn in STRATS.items():
         rng = np.random.default_rng(1000 + viz_seed)
-        a = fn(comp, out, tk, nD, rng)
+        a = fn(comp, out, tk, nD, rng, DEMAND_MAX)
         m_an = makespan_analytic(comp, out, tk, nD, a, partial=True)
         path, m_sim = export_viz(cfg, viz_seed, a, name, m_an, here)
         assert abs(m_sim - m_an) < 1e-6

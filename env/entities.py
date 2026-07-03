@@ -109,12 +109,16 @@ class Door:
         self.assigned_lane = lane_id
         truck.routed_lane = lane_id  # 화물이 도착할 레인을 트럭에 기록
 
-    def fail(self, duration: int) -> Optional[Truck]:
-        """도어 고장 처리. 처리 중이던 트럭은 대기열로 반환."""
+    def fail(self, duration: int, evict: bool = True) -> Optional[Truck]:
+        """도어 고장 처리.
+
+        evict=True (기본, non-compound): 처리 중이던 트럭을 대기열로 반환(진행분 소실, 재시작).
+        evict=False (compound): 트럭을 그대로 둔 채 일시정지 → 고장 종료 후 남은 시간부터 재개.
+        """
         self.is_failed = True
         self.failure_remaining = duration
         interrupted = None
-        if self.is_busy:
+        if self.is_busy and evict:
             interrupted = self.assigned_truck
             self.is_busy = False
             self.remaining_time = 0

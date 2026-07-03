@@ -424,40 +424,50 @@ python run_compound_baselines.py
 | **Exact** | 모든 distinct 배정 전수탐색 → makespan 최소 (소규모 최적해) |
 | **SA** | Heuristic 초기해에서 이웃탐색(목적지 swap/reassign) + 냉각 |
 | **Greedy (ours)** | **본 환경 기본 배정** — (트럭,목적지,보유량)을 보유량 내림차순으로 distinct 탐욕 배정 |
+| 🤖 **RL (ours)** | **DQN 학습 배정** — 목적지 배정을 순차적 MDP로 정의해 makespan 최소화를 학습 ([rl_compound_assignment.py](rl_compound_assignment.py)) |
 | **Heuristic (H)** | Vogel 근사법(VAA)으로 보유량 `f_i,d` 합 최대화 (논문 Step 1–2) |
 | **Random** | 무작위 distinct 배정 (하한 기준) |
 
-> **"우리 모델"에 대하여**: 본 리포트의 RL(IQL+DQN)은 매 tick lane action `{0,1,2}`를 정하는 **실시간 정책**이며,
-> compound 모드에서 makespan을 좌우하는 **목적지 배정**은 결정하지 않는다(그래서 FIFO/Greedy/Heuristic lane
-> 정책이 모두 동일 makespan). 따라서 우리 시스템이 실제로 수행하는 배정 의사결정인 **Greedy(ours)**
-> (`_build_compound_schedule` 기본 로직)를 논문 베이스라인과 함께 비교한다.
+> **"우리 모델(RL)"에 대하여**: 본 리포트의 RL(IQL+DQN)은 원래 매 tick lane action `{0,1,2}`를 정하는
+> **실시간 정책**이라, compound 모드에서 makespan을 좌우하는 **목적지 배정**을 결정하지 못한다(그래서
+> FIFO/Greedy/Heuristic lane 정책이 모두 동일 makespan). 그래서 makespan을 직접 최적화하도록 RL을
+> **순차적 배정 MDP**로 재정의했다(논문의 RL-기반 메타휴리스틱과 같은 취지). 스텝 i = compound 트럭 i를
+> 미사용 목적지에 배정, 상태 = `[정규화 f_i, 사용 마스크, 잔여 통합수요, 진행도] ∈ R^(3·D+1)`, 보상 =
+> `(greedy_makespan − makespan)/(greedy_makespan+1)` (스케일 불변 상대개선, Monte-Carlo). NumpyMLP(→128→D)
+> DQN으로 demand_max·t_k를 무작위화하며 7만 에피소드 학습.
 
 **결과 (t_k=8, demand_max=20, 20 seeds, partial unloading)**
 
 | 전략 | Avg makespan ↓ | Std | Exact 대비 gap | 속도(ms/seed) |
 |---|---:|---:|---:|---:|
-| 🥇 **Exact** | **994.4** | 103.8 | +0.00% | 17.3 |
+| 🥇 **Exact** | **994.4** | 103.8 | +0.00% | 17.1 |
 | **SA** | 994.8 | 103.9 | **+0.04%** | 5.7 |
-| 🟢 **Greedy (ours)** | **1011.4** | 103.4 | **+1.78%** | 0.01 |
+| 🟢 **Greedy (ours)** | 1011.4 | 103.4 | +1.78% | 0.01 |
+| 🤖 **RL (ours)** | 1047.7 | 115.7 | **+5.38%** | 0.12 |
 | Heuristic | 1105.0 | 109.1 | +11.37% | 0.06 |
-| Random | 1133.2 | 103.0 | +14.28% | 0.01 |
+| Random | 1133.2 | 103.0 | +14.28% | 0.04 |
 
 **설정 스윕 (Exact 대비 gap %)**
 
-| (t_k, demand_max) | Exact avg | SA | Greedy (ours) | Heuristic | Random |
-|---|---:|---:|---:|---:|---:|
-| (4, 10) | 260 | +0.20% | +1.77% | +10.02% | +13.78% |
-| (4, 20) | 503 | +0.06% | +1.83% | +11.25% | +14.13% |
-| (4, 30) | 744 | +0.05% | +2.53% | +10.21% | +14.21% |
-| (8, 10) | 508 | +0.20% | +1.66% | +10.23% | +14.06% |
-| (8, 20) | 994 | +0.04% | +1.78% | +11.37% | +14.28% |
-| (8, 30) | 1476 | +0.02% | +2.56% | +10.34% | +14.39% |
+| (t_k, demand_max) | Exact avg | SA | Greedy (ours) | RL (ours) | Heuristic | Random |
+|---|---:|---:|---:|---:|---:|---:|
+| (4, 10) | 260 | +0.20% | +1.77% | +5.94% | +10.02% | +13.78% |
+| (4, 20) | 503 | +0.06% | +1.83% | +5.33% | +11.25% | +14.13% |
+| (4, 30) | 744 | +0.05% | +2.53% | +4.85% | +10.21% | +14.21% |
+| (8, 10) | 508 | +0.20% | +1.66% | +5.98% | +10.23% | +14.06% |
+| (8, 20) | 994 | +0.04% | +1.78% | +5.38% | +11.37% | +14.28% |
+| (8, 30) | 1476 | +0.02% | +2.56% | +4.92% | +10.34% | +14.39% |
 
-> **분석**: SA는 Exact(최적) 대비 평균 **+0.04%**로 사실상 최적에 도달한다. 주목할 점은 **우리 환경의 기본
-> 배정 Greedy(ours)가 +1.78%로 SA 다음 2위**이며, 논문의 구성적 Heuristic(VAA, +11%)을 **크게 능가**한다는
-> 것이다(전역 탐욕이 Vogel 후회법보다 makespan 최적에 더 근접). 순서(SA ≈ Exact < **Greedy(ours)** ≪
-> Heuristic < Random)는 전 설정 스윕에서 일관되며, 이는 논문의 흐름 — *휴리스틱은 빠르나 gap이 있고
-> SA가 최적 근처로 수렴* — 과 부합한다.
+> **분석**: 순위는 **Exact ≈ SA < Greedy(ours) < RL(ours) ≪ Heuristic < Random**으로 전 설정에서 일관된다.
+> - **SA**는 Exact 대비 **+0.04%**로 사실상 최적에 도달 — 논문의 *SA가 최적 근처로 수렴* 결론과 부합.
+> - 🤖 **RL(ours)**: 도메인 지식 없이 데이터만으로 학습한 정책이 **+5.38%**로 논문의 구성적 Heuristic(+11%)·
+>   Random(+14.6%)을 **분명히 능가**한다. 다만 우리가 손으로 설계한 Greedy(+1.78%)·메타휴리스틱 SA에는 못 미친다.
+> - 시사점: 순수 학습 정책은 **휴리스틱보다 나은 배정을 스스로 발견**하지만, makespan(=max 기반)의 전역 결합
+>   구조상 myopic 순차 배정으로는 최적 도달에 한계가 있어, SA 같은 탐색 기반 메타휴리스틱이 여전히 우위다.
+>   (논문이 RL을 단독 정책이 아니라 **SA의 탐색을 돕는 보조(NS 선택)**로 쓴 설계와 같은 맥락.)
+
+학습: `python rl_compound_assignment.py` → `checkpoints_compound_rl/weights_final.npz`.
+가중치가 없으면 `run_compound_baselines.py`는 RL을 제외하고 나머지 전략만 비교한다.
 
 ---
 
@@ -477,12 +487,222 @@ python run_compound_experiment.py
 > 안정적이며, 논문 Table 7의 *DBPR 단조증가* 추세(도어 공유 시퀀싱·changeover 구조에서 유래)는
 > 재현하지 않습니다. 부분 하차가 makespan을 단축한다는 **핵심 결론은 견고하게 재현**됩니다.
 
+---
+
+### 실험 C — Door Disruption 하 배정 강인성 (RL 재학습 포함)
+
+```bash
+# RL-DR(도어 고장 하 학습) 가중치 생성 후 비교 실험
+python -c "from rl_compound_assignment import train_disrupt; train_disrupt()"
+python run_compound_disruption.py
+```
+
+입고 **도어 고장(door failure)**을 추가한 환경에서 각 배정 전략의 강인성을 비교한다. disruption이 있으면
+해석 makespan 공식이 무효라 **실제 시뮬레이터 makespan**을 ground truth로 사용한다.
+
+**도어 고장 모델 (compound 모드)**: 매 스텝 `prob`로 임의 도어가 10–20스텝 고장. compound 모드는 고장 시
+하역을 **재개(resume, 진행분 보존)** 하여(`Door.fail(evict=False)`) 긴 하역시간의 런어웨이를 방지한다.
+(non-compound 경로는 기존 eviction 유지 → 회귀 보존.)
+
+**RL-DR (도어 고장 하 재학습)**: makespan을 시뮬레이터로 평가하는 reward(`(greedy_sim−rl_sim)/(greedy_sim+1)`,
+동일 seed로 트럭+고장 고정)로 RL 배정을 8,000 에피소드 재학습. 학습 seed(1000~)와 평가 seed(0~19) 분리.
+
+**결과 (prob=0.05, t_k=8, demand_max=20, 20 seeds)**
+
+| 전략 | makespan @nominal | makespan @disrupt | 증가율 | best 대비 |
+|---|---:|---:|---:|---:|
+| 🥇 **Exact** | 994.4 | **1103.2** | +11.0% | +0.00% |
+| **SA** | 995.0 | 1105.3 | +11.1% | +0.19% |
+| 🟢 **Greedy (ours)** | 1011.4 | 1115.2 | +10.3% | +1.08% |
+| 🤖 **RL (nominal 학습)** | 1047.7 | 1161.0 | +10.8% | +5.23% |
+| 🤖 **RL-DR (disruption 학습)** | 1058.5 | 1173.2 | +10.8% | +6.34% |
+| Heuristic | 1105.0 | 1214.5 | +9.9% | +10.08% |
+| Random | 1134.7 | 1249.5 | +10.1% | +13.25% |
+
+> **분석 (정직한 보고)**:
+> - **도어 고장은 전 전략을 거의 균일하게 +10~11% 악화**시키며, **순위는 무결(nominal) 환경과 동일**하게
+>   유지된다(Exact ≈ SA < Greedy < RL < Heuristic < Random). 즉 고장 오버헤드가 **배정에 거의 무관**하다.
+> - 그런데 **RL-DR(도어 고장 하 재학습)이 nominal RL보다 오히려 나쁘다**(+6.34% vs +5.23%). 왜?
+>   결정적 단서는 **RL-DR이 고장 없는 nominal에서도 더 나쁘다**는 것(1058.5 > 1047.7) — disruption 강인성을
+>   얻은 게 아니라 **전반적으로 더 약한 정책**이다. 원인은 disruption 학습이 시뮬레이터 기반이라 느려
+>   **8,000 에피소드 + noisy 보상**에 그친 반면 nominal RL은 **70,000 에피소드 + 깨끗한 해석 보상**이었던
+>   **학습 예산·노이즈 차이**(undertraining)다.
+
+**Headroom 진단 (`run_compound_headroom.py`)**: "disruption에서 배정으로 줄일 여지가 있긴 한가?"를 전수탐색으로 측정.
+각 seed에서 고장 패턴을 **미리 아는 clairvoyant 최적 배정**(2520개 전수, disruption 시뮬레이션)을 구해
+nominal-최적 배정과 비교했다.
+
+| | nominal-최적 @disrupt | clairvoyant-최적 @disrupt | **headroom** |
+|---|---:|---:|---:|
+| 6 seeds 평균 | 1111.5 | 1111.5 | **0.0 (0.0%)** |
+
+> **결론**: **headroom = 0.0%** — 미래 고장을 다 알고 골라도 nominal-최적 배정을 못 이긴다. 즉 *nominal에서
+> 최적인 배정이 disruption에서도 최적*이라, **disruption 전용으로 학습할 대상이 애초에 존재하지 않는다.**
+> RL-DR이 진 것은 (1) 그 학습 목표가 공집합이고 (2) undertraining 때문이지, "disruption 학습이 역효과"가
+> 아니다. 이는 본 모델이 **일회성 배정**(결정 후 고장은 수동적으로 닥침) 구조이기 때문 — 도어 고장 강인성은
+> *배정*이 아니라 *실시간 운영 정책*(고장 시 재배치·우회)에서 와야 한다. (본문 실험 6의 Domain Randomization이
+> 성공한 것은 RL이 **매 tick 반응하는 실시간 정책**이라 적응할 행동이 있었기 때문 — 여기와 구조가 다르다.)
+
+산출물: `compound_disruption_results.json`, `viz/sim_compound_disrupt_{greedy,rldr}.json`,
+`checkpoints_compound_rl/weights_dr.npz`.
+
+---
+
+### 실험 D — 어떤 돌발상황이 RL을 *유리하게* 하는가
+
+```bash
+python run_compound_rl_win.py          # RL이 이기는 환경 (양성)
+python compound_online_dispatch.py     # 순수 병렬 스케줄링 (음성 대조)
+```
+
+실험 A~C의 일관된 교훈: **정적 일회성 결정**(배정)이나 **순수 병렬 처리**(하역)에서는 정적 최적화기·규칙
+(Exact/SA/LPT)이 near-optimal이라 RL이 이기기 어렵다. 그렇다면 **RL이 이기는 돌발상황의 조건**은?
+
+> **(A) 온라인 불확실성** — 정보가 실행 *도중* 드러나 오프라인 최적화 불가
+> **(B) 실시간 recourse** — 매 tick 적응 결정 가능
+> **(C) 자원 희소성 + 자원이 대상에 커밋** — 빈 자원을 수요 있는 대상으로 **재배치할 여지(headroom>0)**
+
+**양성 결과** — 동적 도착 + **출고 도크 희소(3<5 lanes)** + 도어 고장 환경 (본문 메인 환경, 20 seeds):
+
+| 정책 | Avg Ticks ↓ | Empty Dep ↓ |
+|---|---:|---:|
+| 🥇 **RL** | **336.9** | **2.90** |
+| Random | 340.3 | 4.50 |
+| FIFO | 340.6 | 4.65 |
+| Heuristic | 345.6 | 4.00 |
+| Greedy | 346.9 | 4.10 |
+
+**대조 (희소성 제거)** — 도크 풍부(8≥5): `FIFO = Greedy = 326.1` 동률 → 빈-레인 도크가 없어 재배치할 여지 0.
+
+> **분석**: 도크(3) < 레인(5)이라 한 도크가 **비어가는 레인**을 서비스하면 빈 출발(empty departure)=낭비.
+> RL은 `action=2`로 **빈-레인 도크를 화물 있는 레인으로 언제 재배치할지**를 학습 → empty departure 2.90(vs
+> FIFO 4.65)로 줄여 makespan 최소. 핵심은 **FIFO(재배치 안 함)도 Greedy(항상 재배치)도 못 이기는 "타이밍"**
+> 을 RL이 학습했다는 점이다. 이는 (A)(B)(C)를 모두 만족 — 동적 도착(A), 매 tick action(B), 도크 희소+레인
+> 커밋(C). 도크를 풍부하게 하면 (C)가 깨져 우위가 사라진다(동률 326.1).
+
+**음성 대조** (`compound_online_dispatch.py`): 순수 병렬 하역 스케줄링(도어 고장 + 마이그레이션 허용)에서는
+긴 고장에서도 **LPT가 near-optimal**이라 마이그레이션·신뢰도 회피가 이득 없음(LPT 1004 vs MigrateAware 1005).
+→ 자원이 *교환 가능한 동질 기계*면 RL 우위 없음. **자원이 특정 대상에 커밋되고 수요가 동적**일 때만 (C)가 성립.
+
+| 환경 구조 | RL이 이기나? | 이유 |
+|---|:---:|---|
+| 정적 일회성 배정 (실험 A) | ✗ | Exact/SA가 오프라인 최적 |
+| 도어 고장 (배정 무관, 실험 C) | ✗ | headroom=0, 일회성 |
+| 순수 병렬 하역 스케줄링 | ✗ | LPT near-optimal, recourse 무이득 |
+| **동적 + 도크 희소 + 재배치(실험 D)** | ✅ | (A)(B)(C) 모두 충족 — 재배치 타이밍 학습 |
+
+산출물: `compound_rl_win_results.json`.
+
+---
+
+### 실험 E — 실험 A 재실험: **동적 Compound** (RL이 이기는 compound 환경)
+
+```bash
+python run_compound_dynamic_A.py
+```
+
+실험 A는 compound 배정을 **정적 일회성** 문제로 풀어 RL이 졌다(Exact/SA가 오프라인 최적). 같은 compound
+트럭을 **동적 환경**(`compound_dynamic=True`)에 넣으면 — 동적 도착 + 출고 도크 희소(3<5) + 도어 고장 +
+실시간 `action=2` 재배치 — 실험 D의 조건 (A)(B)(C)가 모두 성립해 **RL이 baseline을 이긴다.**
+
+> **동적 compound 메커니즘**: 각 트럭은 화물 최다 목적지를 보유(kept)·직접 운반(부분 하차), 나머지만 하차 →
+> 동적 희소 도크가 레인을 비우며 처리. 부분 하차로 레인 화물이 얇아져 빈-레인 도크가 더 자주 생기고, RL은
+> `action=2`로 이를 화물 있는 레인으로 재배치하는 타이밍을 학습. (트럭 분포는 비-compound 동적 env와 동일 →
+> 본문 동적 lane-agent RL `checkpoints_2stage_8door`가 in-distribution.)
+
+**결과 (희소 도크 3 < 5 lanes, 부분 하차, 도어 고장, 20 seeds)**
+
+| 정책 | Avg Ticks ↓ | Empty Dep ↓ | Throughput | kept 직접배송 |
+|---|---:|---:|---:|---:|
+| 🥇 **RL** | **327.1** | **8.55** | 450 | 239 |
+| Random | 329.1 | 12.55 | 450 | 239 |
+| Greedy | 329.8 | 8.80 | 450 | 239 |
+| FIFO | 330.6 | 12.10 | 450 | 239 |
+| Heuristic | 331.4 | 8.55 | 450 | 239 |
+
+**대조 (희소성 제거)** — 도크 풍부(8≥5): `FIFO = Greedy = 323.7` 동률 → 재배치 여지 0, RL 우위 소멸.
+
+**SA·Exact 와의 비교**: SA/Exact는 **정적 일회성 배정 최적화기**(작은 distinct 배정 + 해석식 makespan)라
+동적 env(50~70대 동적 도착, 실시간 결정)에 **직접 적용 불가**다. 동적 env에서 그들이 정할 수 있는 건
+각 트럭의 **보유 목적지(kept) 배정 레버**뿐이고, RL의 `action=2` 같은 실시간 재배치는 못 한다. 그래서
+배정 레버를 쓸어 *SA/Exact가 도달 가능한 천장*을 측정했다(FIFO 정적 실행):
+
+| 레버 | 설정 | makespan |
+|---|---|---:|
+| **배정 레버**(SA/Exact 영역) | FIFO + argmax (**최적 배정**) | **330.6** |
+| | FIFO + random | 335.9 |
+| | FIFO + min (최악) | 334.2 |
+| **action=2 레버**(RL 영역) | 🥇 RL + argmax | **327.1** |
+
+> **argmax(greedy)가 최적 배정**이다(random/min보다 우수). 즉 **SA/Exact가 배정을 아무리 최적화해도
+> 천장은 330.6**(=최적 배정 + 정적 실행)이고, action=2가 없어 그 이상 갈 수 없다. **RL은 여기에 실시간
+> 재배치를 더해 327.1로 SA/Exact 천장을 +3.5 넘어선다.** → 동적 환경에서 **RL > SA/Exact**. 정적 실험 A에서
+> SA/Exact가 RL을 이긴 것은 그 환경에 *재배치 레버가 없었기(headroom=0)* 때문이며, 동적 환경에서는
+> 재배치 레버가 살아나 RL이 우위를 갖는다.
+
+> **결론**: **정적 실험 A에서 지던 RL(동일 compound 트럭)이, 동적+희소+재배치 구조에서는 baseline을 이긴다**
+> (RL 327.1 < FIFO 330.6, empty_dep 8.55 vs 12.10). 즉 *문제를 정적 배정에서 동적 운영으로 바꾸는 순간*
+> RL의 실시간 적응(action=2)이 가치를 갖는다. compound 자체가 RL에 불리했던 게 아니라, **정적 일회성 구조**가
+> 불리했던 것이다 — 이것이 실험 A~D를 관통하는 핵심이다.
+>
+> 구현: env에 `compound_dynamic` 모드 추가(부분 하차 + 동적 도착 + 희소 도크 + action=2). 정적 compound
+> (실험 A~C)·비-compound(본문) 경로는 모두 회귀 byte-identical 보존.
+
+산출물: `compound_dynamic_A_results.json`.
+
+---
+
+### 실험 F — 실험 C 재수행: **동적 Compound** 도어 고장 sweep (RL 강인성)
+
+```bash
+python run_compound_dynamic_C.py
+```
+
+실험 C는 정적 배정에서 도어 고장을 봤다(헤드룸=0, 배정 무관). 여기서는 RL이 실제 역할(action=2)을 하는
+**동적 compound 환경**에서 도어 고장 확률을 0→0.20으로 높이며 RL vs 베이스라인 강인성을 비교한다.
+(해당 모델 = 동적 lane-agent RL, **prob=0.02 학습**.)
+
+**Avg Ticks ↓** (희소 도크 3<5, 부분 하차, 20 seeds)
+
+| prob | RL | FIFO | Greedy | Heuristic | Random | 최고 |
+|---:|---:|---:|---:|---:|---:|---|
+| 0.00 | **327.9** | 328.8 | 329.9 | 330.8 | 329.5 | RL |
+| 0.02 | **327.1** | 330.6 | 329.8 | 331.4 | 330.7 | RL |
+| 0.05 | 332.1 | 332.3 | **330.6** | 331.4 | 332.6 | Greedy |
+| 0.10 | 335.6 | 335.5 | **331.1** | 333.6 | 334.9 | Greedy |
+| 0.15 | ⚠️ 824.2 | 340.5 | 337.4 | 338.6 | **337.1** | Random |
+| 0.20 | ⚠️ 2282.6 | 354.9 | 350.2 | 348.8 | **348.6** | Random |
+
+**Empty Departures ↓** (action=2 재배치의 직접 지표)
+
+| prob | RL | FIFO | Greedy | Heuristic | Random |
+|---:|---:|---:|---:|---:|---:|
+| 0.02 | **8.55** | 12.10 | 8.80 | 8.55 | 12.35 |
+| 0.10 | 9.15 | 12.50 | 9.20 | 8.80 | 12.45 |
+| 0.20 | ⚠️ 303.1 | 14.90 | 10.25 | 9.60 | 14.90 |
+
+> **분석 (본문 실험 5/6과 동일 구조 재현)**:
+> - **학습 분포 근처(prob 0.00~0.02)**: RL이 ticks·empty departures 모두 최저 — action=2 재배치 우위 발현.
+> - **중간(0.05~0.10)**: 차이 축소, Greedy(항상 재배치)가 근소 우위 — 고장이 늘수록 재배치 자체 가치↑.
+> - **고확률 OOD(0.15~0.20)**: **RL 붕괴**(824→2283 ticks, empty dep 303) — 학습 중 못 본 관측 분포(다수 도어
+>   장기 고장)에서 Q-network가 잘못된 행동 반복 = **분포 이탈(distribution shift)**. 규칙 기반은 완만히 열화.
+> - **결론**: RL의 우위는 **학습한 disruption 수준에 국한**된다. 실험 C(정적)에서는 배정 헤드룸=0이라 재학습
+>   자체가 무의미했지만, **동적 환경에서는 재배치 레버가 살아있어** — 학습 분포 내에선 RL이 이기고, 벗어나면
+>   붕괴한다. 이는 본문 실험 6처럼 **도메인 랜덤화(prob 범위 확장 재학습)** 로 해소 가능하다(정적 RL-DR이 실패한
+>   것과 대조 — 거긴 headroom=0, 여긴 headroom>0).
+
+산출물: `compound_dynamic_C_results.json`.
+
 ### 시각화
 
 `open viz/index2d.html` → 드롭다운 상단 Compound Truck 그룹에서 재생:
 
-- **배정 베이스라인** (seed3, 동일 트럭·배정만 상이): Exact/SA `makespan 900` < Heuristic `943` < Random `999`
-  → `viz/sim_compound_assign_{exact,sa,heuristic,random}.json` (`run_compound_baselines.py` 생성)
+- **동적 Compound (RL 우위)** (seed4, 희소 도크+고장): RL `325` < FIFO `344` → action=2 재배치 효과
+  → `viz/sim_compound_dynamic_{rl,fifo}.json` (`run_compound_dynamic_A.py` 환경)
+- **배정 베이스라인** (seed3, 동일 트럭·배정만 상이): Exact/SA `900` < RL `919` < Greedy/Heuristic `943` < Random `999`
+  → `viz/sim_compound_assign_{exact,sa,rl,greedy,heuristic,random}.json` (`run_compound_baselines.py` 생성)
+- **Door Disruption 하** (seed3, prob=0.05): RL-DR `998` vs Greedy `1030` (해당 seed 기준)
+  → `viz/sim_compound_disrupt_{rldr,greedy}.json` (`run_compound_disruption.py` 생성)
 - **Partial vs Complete**: `makespan 943 vs 1204` (seed3·t_k=8·demand_max=20)
   → `viz/sim_compound_{partial,complete}.json` (`run_compound_experiment.py` 생성)
 

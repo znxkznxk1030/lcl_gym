@@ -1,0 +1,49 @@
+{
+  "scarce_docks_3": {
+    "RL": {
+      "ticks": 327.05,
+      "ticks_std": 13.395801581092488,
+      "empty_dep": 8.55,
+      "throughput": 449.65,
+      "kept_delivered": 238.55
+    },
+    "FIFO": {
+      "ticks": 330.55,
+      "ticks_std": 9.738968117824394,
+      "empty_dep": 12.1,
+      "throughput": 449.65,
+      "kept_delivered": 238.55
+    },
+    "Greedy": {
+      "ticks": 329.75,
+      "ticks_std": 9.443913383762052,
+      "empty_dep": 8.8,
+      "throughput": 449.65,
+      "kept_delivered": 238.55
+    },
+    "Heuristic": {
+      "ticks": 331.4,
+      "ticks_std": 8.511169132381285,
+      "empty_dep": 8.55,
+      "throughput": 449.65,
+      "kept_delivered": 238.55
+    },
+    "Random": {
+      "ticks": 329.15,
+      "ticks_std": 10.350241543075214,
+      "empty_dep": 12.55,
+      "throughput": 449.65,
+      "kept_delivered": 238.55
+    }
+  },
+  "abundant_docks_8": {
+    "FIFO": 323.7,
+    "Greedy": 323.7
+  },
+  "assignment_lever_fifo": {
+    "argmax": 330.55,
+    "random": 335.85,
+    "min": 334.25
+  },
+  "sa_exact_ceiling": 330.55
+}
